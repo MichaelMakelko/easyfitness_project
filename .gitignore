@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 data
 
+src/config.py
+
+
+
+
 # Beispiel für Node
 node_modules/
 dist/
