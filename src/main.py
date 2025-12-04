@@ -1,5 +1,5 @@
 # main.py
-from whatsapp.webhook import webhook_bp
+from api.webhook import webhook_bp
 from flask import Flask
 
 app = Flask(__name__)

@@ -2,8 +2,8 @@
 import re
 from flask import Blueprint, request, jsonify
 from model.llama_model import LlamaBot
-from memory.customer_db import CustomerDB
-from whatsapp.client import send_whatsapp_message
+from services.memory.customer_db import CustomerDB
+from api.client import send_whatsapp_message
 from utils.helpers import extract_name
 from config import VERIFY_TOKEN
 import requests
