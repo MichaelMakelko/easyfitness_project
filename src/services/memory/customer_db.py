@@ -2,7 +2,8 @@
 import json
 import os
 from datetime import datetime
-from config import MEMORY_FILE
+
+MEMORY_FILE = "data/customers.json"
 
 class CustomerDB:
     def __init__(self):
