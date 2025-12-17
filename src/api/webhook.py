@@ -15,6 +15,8 @@ webhook_bp = Blueprint('webhook', __name__)
 llm = LlamaBot()
 db = CustomerDB()
 
+
+
 def build_messages(customer):
     # Aktualisierter Prompt: Frage nach Name, E-Mail, Datum für Probetraining
     name = customer["name"] if customer["name"] != "du" else "noch unbekannt"
