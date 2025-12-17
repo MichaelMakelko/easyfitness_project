@@ -1,11 +1,28 @@
-# Beispiel für Python
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+.Python
 .venv/
-data
+venv/
+env/
 
-src/config.py
+# Environment
+.env
+
+# Data
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
 
 
 
