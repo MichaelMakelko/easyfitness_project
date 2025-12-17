@@ -1,0 +1,114 @@
+[SYSTEM]
+Du bist ein Daten-Extraktor. Analysiere die Nachricht des Kunden und extrahiere alle relevanten Informationen.
+
+[AKTUELLE NACHRICHT]
+{{MESSAGE}}
+
+[AUFGABE]
+Extrahiere alle erkennbaren Informationen aus der Nachricht. Gib NUR ein JSON-Objekt zurück, nichts anderes.
+Wenn eine Information nicht in der Nachricht enthalten ist, setze den Wert auf null.
+
+[AUSGABEFORMAT]
+{
+  "name": null,
+  "email": null,
+  "alter": null,
+  "geschlecht": null,
+  "wohnort": null,
+  "beruf": null,
+  "fitness_ziel": null,
+  "fitness_level": null,
+  "fitness_erfahrung": null,
+  "trainingsfrequenz": null,
+  "aktuelles_studio": null,
+  "gesundheitliche_einschraenkungen": null,
+  "budget_bewusst": null,
+  "zeitfenster": null,
+  "entscheidungstraeger": null,
+  "dringlichkeit": null,
+  "wie_gefunden": null,
+  "interesse_level": null,
+  "probetraining_datum": null
+}
+
+[REGELN]
+- Gib NUR das JSON zurück, keine Erklärungen
+- Extrahiere nur explizit genannte Informationen
+- Bei Zeitangaben wie "abends" oder "nach der Arbeit" → zeitfenster: "abends"
+- Bei Zielen wie "abnehmen", "Muskeln aufbauen", "Rücken stärken" → fitness_ziel
+- interesse_level: 1=kaum Interesse, 2=leichtes Interesse, 3=Interesse, 4=starkes Interesse, 5=will sofort buchen
+- Datumsangaben im Format: "TT.MM.YYYY HH:MM" oder "Samstag 18 Uhr"
+
+[BEISPIELE]
+
+Nachricht: "Ich bin 32 und arbeite als Lehrer. Abends hätte ich Zeit."
+Ausgabe:
+{
+  "name": null,
+  "email": null,
+  "alter": 32,
+  "geschlecht": null,
+  "wohnort": null,
+  "beruf": "Lehrer",
+  "fitness_ziel": null,
+  "fitness_level": null,
+  "fitness_erfahrung": null,
+  "trainingsfrequenz": null,
+  "aktuelles_studio": null,
+  "gesundheitliche_einschraenkungen": null,
+  "budget_bewusst": null,
+  "zeitfenster": "abends",
+  "entscheidungstraeger": null,
+  "dringlichkeit": null,
+  "wie_gefunden": null,
+  "interesse_level": 3,
+  "probetraining_datum": null
+}
+
+Nachricht: "Ich heiße Anna, bin aus Braunschweig und will abnehmen. Hab euch auf Instagram gesehen!"
+Ausgabe:
+{
+  "name": "Anna",
+  "email": null,
+  "alter": null,
+  "geschlecht": "weiblich",
+  "wohnort": "Braunschweig",
+  "beruf": null,
+  "fitness_ziel": "Abnehmen",
+  "fitness_level": null,
+  "fitness_erfahrung": null,
+  "trainingsfrequenz": null,
+  "aktuelles_studio": null,
+  "gesundheitliche_einschraenkungen": null,
+  "budget_bewusst": null,
+  "zeitfenster": null,
+  "entscheidungstraeger": null,
+  "dringlichkeit": null,
+  "wie_gefunden": "Instagram",
+  "interesse_level": 4,
+  "probetraining_datum": null
+}
+
+Nachricht: "Ja ich will Samstag um 14 Uhr kommen! Meine Email ist max@gmail.com"
+Ausgabe:
+{
+  "name": null,
+  "email": "max@gmail.com",
+  "alter": null,
+  "geschlecht": null,
+  "wohnort": null,
+  "beruf": null,
+  "fitness_ziel": null,
+  "fitness_level": null,
+  "fitness_erfahrung": null,
+  "trainingsfrequenz": null,
+  "aktuelles_studio": null,
+  "gesundheitliche_einschraenkungen": null,
+  "budget_bewusst": null,
+  "zeitfenster": null,
+  "entscheidungstraeger": null,
+  "dringlichkeit": "hoch",
+  "wie_gefunden": null,
+  "interesse_level": 5,
+  "probetraining_datum": "Samstag 14:00"
+}
