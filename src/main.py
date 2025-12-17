@@ -1,6 +1,9 @@
 # main.py
-from api.webhook import webhook_bp
+"""Easyfitness WhatsApp Bot - Entry point."""
+
 from flask import Flask
+
+from api import webhook_bp
 
 app = Flask(__name__)
 app.register_blueprint(webhook_bp)
