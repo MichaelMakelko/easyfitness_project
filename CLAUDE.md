@@ -75,8 +75,42 @@ Copy `.env.example` to `.env` and configure:
 | `MODEL_PATH` | Path to local Llama model directory |
 | `MAGICLINE_BASE_URL` | MagicLine API base URL |
 | `MAGICLINE_API_KEY` | MagicLine API key |
-| `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments |
+| `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments (Probetraining = 30 min) |
 | `MAGICLINE_STUDIO_ID` | Studio ID |
+| `MAGICLINE_TEST_CUSTOMER_ID` | Fallback customer ID for testing bookings |
+
+## Booking Flow
+
+### Intent Detection (`text_parser.py`)
+Booking is triggered when:
+- Message contains booking keyword (`probetraining`, `termin`, `buchen`, etc.)
+- AND contains date (`25.12.`, `25.12.2025`, weekday names) OR time (`10:00`, `10 Uhr`)
+
+### Date/Time Parsing
+- `extract_date_only()`: Extracts date, assumes current year if only DD.MM. given
+- `extract_time_only()`: Extracts time from `HH:MM` or `X Uhr` format
+- `extract_date_time()`: Only returns value if BOTH date AND time are present
+- If only date given → Bot asks for time (no default value)
+
+### MagicLine API
+- Probetraining duration: **30 minutes**
+- Validates slot availability before booking
+- Uses `MAGICLINE_TEST_CUSTOMER_ID` as fallback for unregistered users
+
+## Customer Data Handling
+
+### RAM vs JSON
+- On server start: `customers.json` is loaded **once** into RAM
+- All reads come from RAM (fast)
+- All writes update RAM + save to JSON immediately
+- **Important**: Manual edits to `customers.json` require server restart
+
+### Duplicate Message Handling
+WhatsApp sends retries if response is slow. The bot tracks processed message IDs to prevent duplicate processing.
+
+## Bot Date Awareness
+
+The system prompt includes current date (`{{WOCHENTAG}}`, `{{DATUM}}`), injected dynamically via `ChatService.build_system_prompt()`. The bot always knows today's date.
 
 ## Key Constraints
 
