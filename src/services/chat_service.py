@@ -2,10 +2,14 @@
 """Chat service for handling LLM interactions and response parsing."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from config import PROMPTS_DIR
+
+# German weekday names
+WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 
 class ChatService:
@@ -47,7 +51,14 @@ class ChatService:
         profil_filled = {k: v for k, v in profil.items() if v is not None}
         profil_str = json.dumps(profil_filled, ensure_ascii=False) if profil_filled else "keine Daten"
 
+        # Get current date info
+        heute = datetime.now()
+        wochentag = WOCHENTAGE[heute.weekday()]
+        datum = heute.strftime("%d.%m.%Y")
+
         prompt = self.prompt_template
+        prompt = prompt.replace("{{WOCHENTAG}}", wochentag)
+        prompt = prompt.replace("{{DATUM}}", datum)
         prompt = prompt.replace("{{NAME}}", name)
         prompt = prompt.replace("{{STATUS}}", customer["status"])
         prompt = prompt.replace("{{PROFIL}}", profil_str)
