@@ -21,7 +21,7 @@ class BookingService:
         }
 
     def validate_slot(
-        self, customer_id: int, start_datetime: str, duration_minutes: int = 20
+        self, customer_id: int, start_datetime: str, duration_minutes: int = 30
     ) -> dict[str, Any]:
         """
         Validate if appointment slot is available.
@@ -43,19 +43,27 @@ class BookingService:
             "endDateTime": end_datetime,
         }
 
+        url = f"{self.base_url}/appointments/bookable/validate"
+        print(f"🔍 VALIDATE REQUEST:")
+        print(f"   URL: {url}")
+        print(f"   Payload: {payload}")
+
         try:
             response = requests.post(
-                f"{self.base_url}/appointments/bookable/validate",
+                url,
                 json=payload,
                 headers=self.headers,
                 timeout=10,
             )
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {response.text}")
             return response.json()
         except requests.RequestException as e:
+            print(f"   ❌ Error: {e}")
             return {"error": str(e), "validationStatus": "ERROR"}
 
     def book_appointment(
-        self, customer_id: int, start_datetime: str, duration_minutes: int = 20
+        self, customer_id: int, start_datetime: str, duration_minutes: int = 30
     ) -> dict[str, Any]:
         """
         Book an appointment slot.
@@ -97,7 +105,7 @@ class BookingService:
         self,
         customer_id: int,
         start_datetime: str,
-        duration_minutes: int = 20,
+        duration_minutes: int = 30,
     ) -> tuple[bool, str, Optional[str]]:
         """
         Validate and book appointment in one call.
@@ -129,16 +137,31 @@ class BookingService:
         """
         Calculate end time from start time and duration.
 
-        Simple implementation - replaces minutes in the time portion.
-        For production, use proper datetime parsing.
-
         Args:
-            start_datetime: Start time string
+            start_datetime: Start time in ISO format (e.g., 2025-12-26T18:00:00+01:00)
             duration_minutes: Duration in minutes
 
         Returns:
-            End time string
+            End time string in ISO format
         """
-        # Simple replacement for 20-minute EMS sessions
-        # In production, use datetime parsing
-        return start_datetime.replace("00:00", f"00:{duration_minutes:02d}")
+        from datetime import datetime, timedelta
+        import re
+
+        # Extract the datetime part and timezone
+        # Format: 2025-12-26T18:00:00+01:00
+        match = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})([+-]\d{2}:\d{2})?', start_datetime)
+        if not match:
+            # Fallback: just return start + duration as simple string
+            return start_datetime
+
+        dt_str = match.group(1)
+        tz_str = match.group(2) or "+01:00"
+
+        # Parse datetime
+        dt = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
+
+        # Add duration
+        end_dt = dt + timedelta(minutes=duration_minutes)
+
+        # Format back
+        return f"{end_dt.strftime('%Y-%m-%dT%H:%M:%S')}{tz_str}"
