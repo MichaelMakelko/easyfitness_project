@@ -26,6 +26,7 @@ MAGICLINE_BASE_URL: str = os.getenv("MAGICLINE_BASE_URL", "https://open-api.magi
 MAGICLINE_API_KEY: str = os.getenv("MAGICLINE_API_KEY", "")
 MAGICLINE_BOOKABLE_ID: int = int(os.getenv("MAGICLINE_BOOKABLE_ID", "0"))
 MAGICLINE_STUDIO_ID: int = int(os.getenv("MAGICLINE_STUDIO_ID", "0"))
+MAGICLINE_TEST_CUSTOMER_ID: int = int(os.getenv("MAGICLINE_TEST_CUSTOMER_ID", "0"))
 
 # Email Configuration (optional)
 EMAIL_SENDER: str = os.getenv("EMAIL_SENDER", "")

@@ -1,0 +1,87 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+German-language WhatsApp chatbot for EasyFitness EMS Braunschweig fitness studio. Uses a local Llama 3.1 8B LLM (4-bit quantized) to simulate "Max" - a fitness trainer persona who engages with leads and books trial training sessions via the MagicLine booking API.
+
+## Commands
+
+### Setup
+```bash
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+
+# Install PyTorch with CUDA 12.1 FIRST
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Then install other dependencies
+pip install -r src/requirements.txt
+```
+
+### Running
+```bash
+cd src
+python main.py  # Runs Flask on http://localhost:5000
+```
+Requires ngrok or similar for WhatsApp webhook tunneling.
+
+### Utility Scripts
+```bash
+python scripts/send_with_template.py  # Send template messages
+python scripts/start_chat_with_anyone.py  # Initiate chats
+python scripts/diagnose.py  # Diagnostic utility
+```
+
+## Architecture
+
+```
+WhatsApp Message → Flask Webhook (routes.py)
+    → CustomerService (load customer from JSON)
+    → ChatService (build prompt with history + profile)
+    → LlamaBot (generate JSON response)
+    → BookingService (if appointment intent detected → MagicLine API)
+    → WhatsAppClient (send reply)
+    → CustomerService (save updated history + profile)
+```
+
+### Key Components
+
+- **LlamaBot** (`src/model/llama_model.py`): Llama 3.1 8B with 4-bit BitsAndBytes quantization. Requires ~7.6GB VRAM.
+- **ChatService** (`src/services/chat_service.py`): Builds prompts from `src/prompts/fitnesstrainer_prompt.txt`, parses JSON responses containing `reply` and `profil` fields.
+- **CustomerService** (`src/services/customer_service.py`): Persists customer data and conversation history to `data/customers.json`. Limits history to 100 messages.
+- **BookingService** (`src/services/booking_service.py`): MagicLine API integration for appointment validation and booking.
+- **WhatsAppClient** (`src/api/whatsapp_client.py`): WhatsApp Cloud API v22.0 wrapper.
+
+### Data Storage
+
+All customer data stored in `data/customers.json` (no database). Each customer record includes:
+- Personal profile fields (age, gender, fitness goals, health restrictions)
+- Conversation history (role + content)
+- Status tracking (lead → booked → etc.)
+- Last contact timestamp
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+| Variable | Description |
+|----------|-------------|
+| `VERIFY_TOKEN` | WhatsApp webhook verification token |
+| `ACCESS_TOKEN` | WhatsApp Cloud API access token |
+| `PHONE_NUMBER_ID` | WhatsApp Business phone number ID |
+| `MODEL_PATH` | Path to local Llama model directory |
+| `MAGICLINE_BASE_URL` | MagicLine API base URL |
+| `MAGICLINE_API_KEY` | MagicLine API key |
+| `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments |
+| `MAGICLINE_STUDIO_ID` | Studio ID |
+
+## Key Constraints
+
+- **German language only**: All prompts, customer interactions, and parsing assume German
+- **Local LLM**: Model runs on local GPU with 4-bit quantization (no cloud LLM API)
+- **JSON file persistence**: No database - all data in `data/customers.json`
+- **Persona requirement**: LLM must never reveal it's an AI - always acts as "Max"
+- **Response format**: LLM outputs JSON with `reply` (message text) and `profil` (extracted customer data)

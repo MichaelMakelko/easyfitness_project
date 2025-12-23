@@ -6,7 +6,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from api.whatsapp_client import send_whatsapp_message
-from config import VERIFY_TOKEN
+from config import MAGICLINE_TEST_CUSTOMER_ID, VERIFY_TOKEN
 from model.llama_model import LlamaBot
 from services.booking_service import BookingService
 from services.chat_service import ChatService
@@ -136,8 +136,8 @@ def _handle_booking_if_needed(
     if not start_date_time or not customer_email:
         return reply
 
-    # Try to book
-    customer_id = customer.get("customer_id", 0)
+    # Try to book (use test customer ID as fallback for unregistered users)
+    customer_id = customer.get("customer_id") or MAGICLINE_TEST_CUSTOMER_ID
     success, message, booking_id = booking_service.try_book(
         customer_id=customer_id,
         start_datetime=start_date_time,
