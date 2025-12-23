@@ -42,7 +42,7 @@ class LlamaBot:
             self.model_path,
             device_map="auto",
             quantization_config=quant_config,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             max_memory={0: "7.6GiB", "cpu": "96GiB"},
             offload_folder="offload",
             local_files_only=True,
