@@ -31,6 +31,8 @@ class CustomerService:
     def _default_profil(self) -> dict[str, Any]:
         """Create default customer profile template."""
         return {
+            # MagicLine Integration
+            "magicline_customer_id": None,  # Set manually after customer registers
             # Personal Data
             "alter": None,
             "geschlecht": None,

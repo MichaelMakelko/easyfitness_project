@@ -182,7 +182,7 @@ def _handle_booking_if_needed(
         return reply
 
     # Try to book (use test customer ID as fallback for unregistered users)
-    customer_id = customer.get("customer_id") or MAGICLINE_TEST_CUSTOMER_ID
+    customer_id = customer.get("profil", {}).get("magicline_customer_id") or MAGICLINE_TEST_CUSTOMER_ID
     print(f"📅 Versuche Buchung für Customer-ID: {customer_id}")
 
     success, message, booking_id = booking_service.try_book(
