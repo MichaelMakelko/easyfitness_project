@@ -58,10 +58,15 @@ WhatsApp Message → Flask Webhook (routes.py)
 ### Data Storage
 
 All customer data stored in `data/customers.json` (no database). Each customer record includes:
-- Personal profile fields (age, gender, fitness goals, health restrictions)
-- Conversation history (role + content)
-- Status tracking (lead → booked → etc.)
-- Last contact timestamp
+- `name`: Display name (updated from `vorname`)
+- `status`: Lead status (neuer Interessent → Name bekannt → Probetraining gebucht)
+- `profil`: Profile fields including:
+  - `magicline_customer_id`: MagicLine ID (null for new leads, set manually after registration)
+  - `vorname`, `nachname`: Required for Trial Offer booking
+  - `email`: Required for Trial Offer booking
+  - Other fields: age, gender, fitness goals, health restrictions, etc.
+- `history`: Conversation history (role + content)
+- `letzter_kontakt`: Last contact timestamp
 
 ## Environment Variables
 
@@ -77,7 +82,6 @@ Copy `.env.example` to `.env` and configure:
 | `MAGICLINE_API_KEY` | MagicLine API key |
 | `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments (Probetraining = 30 min) |
 | `MAGICLINE_STUDIO_ID` | Studio ID |
-| `MAGICLINE_TEST_CUSTOMER_ID` | Fallback customer ID for testing bookings |
 
 ## Booking Flow
 
@@ -92,10 +96,25 @@ Booking is triggered when:
 - `extract_date_time()`: Only returns value if BOTH date AND time are present
 - If only date given → Bot asks for time (no default value)
 
-### MagicLine API
+### MagicLine API - Two Booking Flows
+
+**1. Registered Customer Flow** (has `magicline_customer_id`):
+- Uses `/appointments/booking/book` endpoint
+- Requires: `customerId`, `bookableAppointmentId`, `startDateTime`, `endDateTime`
+
+**2. Trial Offer Flow** (new leads without `magicline_customer_id`):
+- Uses `/trial-offers/` endpoints
+- Steps:
+  1. `POST /trial-offers/lead/validate` - Validate lead data
+  2. `POST /trial-offers/lead/create` - Create lead in MagicLine
+  3. `POST /trial-offers/appointments/booking/validate` - Validate slot
+  4. `POST /trial-offers/appointments/booking/book` - Book appointment
+- Required data: `vorname`, `nachname`, `email`, `slotStart`, `slotEnd`
+- Bot asks for missing data before attempting booking
+
+**General:**
 - Probetraining duration: **30 minutes**
 - Validates slot availability before booking
-- Uses `MAGICLINE_TEST_CUSTOMER_ID` as fallback for unregistered users
 
 ## Customer Data Handling
 

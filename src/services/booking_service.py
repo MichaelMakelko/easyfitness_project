@@ -133,6 +133,272 @@ class BookingService:
         else:
             return False, "Leider nicht verfügbar – wähle ein anderes Datum.", None
 
+    # ==================== TRIAL OFFER METHODS (für nicht-registrierte Leads) ====================
+
+    def validate_lead(
+        self, first_name: str, last_name: str, email: str
+    ) -> dict[str, Any]:
+        """
+        Validate lead data before creating.
+
+        Args:
+            first_name: Lead's first name
+            last_name: Lead's last name
+            email: Lead's email address
+
+        Returns:
+            Validation response dictionary
+        """
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "email": email,
+        }
+
+        url = f"{self.base_url}/trial-offers/lead/validate"
+        print(f"🔍 VALIDATE LEAD REQUEST:")
+        print(f"   URL: {url}")
+        print(f"   Payload: {payload}")
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=self.headers,
+                timeout=10,
+            )
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {response.text}")
+
+            if response.status_code == 200:
+                return {"success": True, **response.json()}
+            else:
+                return {"success": False, "error": response.text}
+        except requests.RequestException as e:
+            print(f"   ❌ Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def create_lead(
+        self, first_name: str, last_name: str, email: str
+    ) -> dict[str, Any]:
+        """
+        Create a new lead in MagicLine.
+
+        Args:
+            first_name: Lead's first name
+            last_name: Lead's last name
+            email: Lead's email address
+
+        Returns:
+            Response dictionary with lead data or error
+        """
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "email": email,
+        }
+
+        url = f"{self.base_url}/trial-offers/lead/create"
+        print(f"📝 CREATE LEAD REQUEST:")
+        print(f"   URL: {url}")
+        print(f"   Payload: {payload}")
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=self.headers,
+                timeout=10,
+            )
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {response.text}")
+
+            if response.status_code == 200:
+                return {"success": True, **response.json()}
+            else:
+                return {"success": False, "error": response.text}
+        except requests.RequestException as e:
+            print(f"   ❌ Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def validate_trial_booking(
+        self,
+        first_name: str,
+        last_name: str,
+        email: str,
+        start_datetime: str,
+        duration_minutes: int = 30,
+    ) -> dict[str, Any]:
+        """
+        Validate trial offer booking slot.
+
+        Args:
+            first_name: Lead's first name
+            last_name: Lead's last name
+            email: Lead's email address
+            start_datetime: Start time in ISO format
+            duration_minutes: Appointment duration
+
+        Returns:
+            Validation response dictionary
+        """
+        end_datetime = self._calculate_end_time(start_datetime, duration_minutes)
+
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "email": email,
+            "bookableAppointmentId": self.bookable_id,
+            "slotStart": start_datetime,
+            "slotEnd": end_datetime,
+        }
+
+        url = f"{self.base_url}/trial-offers/appointments/booking/validate"
+        print(f"🔍 VALIDATE TRIAL BOOKING REQUEST:")
+        print(f"   URL: {url}")
+        print(f"   Payload: {payload}")
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=self.headers,
+                timeout=10,
+            )
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {response.text}")
+
+            if response.status_code == 200:
+                return {"success": True, **response.json()}
+            else:
+                return {"success": False, "error": response.text}
+        except requests.RequestException as e:
+            print(f"   ❌ Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def book_trial_appointment(
+        self,
+        first_name: str,
+        last_name: str,
+        email: str,
+        start_datetime: str,
+        duration_minutes: int = 30,
+    ) -> dict[str, Any]:
+        """
+        Book a trial offer appointment.
+
+        Args:
+            first_name: Lead's first name
+            last_name: Lead's last name
+            email: Lead's email address
+            start_datetime: Start time in ISO format
+            duration_minutes: Appointment duration
+
+        Returns:
+            Booking response dictionary with bookingId or error
+        """
+        end_datetime = self._calculate_end_time(start_datetime, duration_minutes)
+
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "email": email,
+            "bookableAppointmentId": self.bookable_id,
+            "slotStart": start_datetime,
+            "slotEnd": end_datetime,
+        }
+
+        url = f"{self.base_url}/trial-offers/appointments/booking/book"
+        print(f"📅 BOOK TRIAL APPOINTMENT REQUEST:")
+        print(f"   URL: {url}")
+        print(f"   Payload: {payload}")
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=self.headers,
+                timeout=10,
+            )
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {response.text}")
+
+            if response.status_code == 200:
+                return {"success": True, **response.json()}
+            else:
+                return {"success": False, "error": response.text}
+        except requests.RequestException as e:
+            print(f"   ❌ Error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def try_book_trial_offer(
+        self,
+        first_name: str,
+        last_name: str,
+        email: str,
+        start_datetime: str,
+        duration_minutes: int = 30,
+    ) -> tuple[bool, str, Optional[str]]:
+        """
+        Complete trial offer booking flow for unregistered leads.
+
+        Steps:
+        1. Validate lead data
+        2. Create lead in MagicLine
+        3. Validate booking slot
+        4. Book the trial appointment
+
+        Args:
+            first_name: Lead's first name
+            last_name: Lead's last name
+            email: Lead's email address
+            start_datetime: Start time in ISO format
+            duration_minutes: Appointment duration
+
+        Returns:
+            Tuple of (success, message, booking_id)
+        """
+        print(f"🎯 TRIAL OFFER BOOKING FLOW START")
+        print(f"   Name: {first_name} {last_name}")
+        print(f"   Email: {email}")
+        print(f"   DateTime: {start_datetime}")
+
+        # Step 1: Validate lead
+        lead_validation = self.validate_lead(first_name, last_name, email)
+        if not lead_validation.get("success"):
+            error = lead_validation.get("error", "Unbekannter Fehler")
+            print(f"   ❌ Lead-Validierung fehlgeschlagen: {error}")
+            return False, "Deine Daten konnten nicht validiert werden. Bitte überprüfe Name und E-Mail.", None
+
+        # Step 2: Create lead
+        lead_creation = self.create_lead(first_name, last_name, email)
+        if not lead_creation.get("success"):
+            error = lead_creation.get("error", "Unbekannter Fehler")
+            print(f"   ❌ Lead-Erstellung fehlgeschlagen: {error}")
+            return False, "Lead konnte nicht erstellt werden. Bitte versuche es erneut.", None
+
+        # Step 3: Validate booking slot
+        booking_validation = self.validate_trial_booking(
+            first_name, last_name, email, start_datetime, duration_minutes
+        )
+        if not booking_validation.get("success"):
+            error = booking_validation.get("error", "Unbekannter Fehler")
+            print(f"   ❌ Slot-Validierung fehlgeschlagen: {error}")
+            return False, "Slot nicht verfügbar – probier ein anderes Datum.", None
+
+        # Step 4: Book appointment
+        booking = self.book_trial_appointment(
+            first_name, last_name, email, start_datetime, duration_minutes
+        )
+        if booking.get("success"):
+            booking_id = booking.get("bookingId")
+            print(f"   ✅ Buchung erfolgreich! Booking-ID: {booking_id}")
+            return True, "Termin gebucht! Bestätigung per E-Mail unterwegs.", booking_id
+        else:
+            error = booking.get("error", "Unbekannter Fehler")
+            print(f"   ❌ Buchung fehlgeschlagen: {error}")
+            return False, "Leider nicht verfügbar – wähle ein anderes Datum.", None
+
     def _calculate_end_time(self, start_datetime: str, duration_minutes: int) -> str:
         """
         Calculate end time from start time and duration.

@@ -33,7 +33,9 @@ class CustomerService:
         return {
             # MagicLine Integration
             "magicline_customer_id": None,  # Set manually after customer registers
-            # Personal Data
+            # Personal Data (required for trial offer booking)
+            "vorname": None,
+            "nachname": None,
             "alter": None,
             "geschlecht": None,
             "wohnort": None,
@@ -99,7 +101,10 @@ class CustomerService:
             if value is not None and key in customer["profil"]:
                 customer["profil"][key] = value
 
-        if profil_data.get("name"):
+        # Update name from vorname if provided
+        if profil_data.get("vorname"):
+            customer["name"] = profil_data["vorname"]
+        elif profil_data.get("name"):
             customer["name"] = profil_data["name"]
 
         if profil_data.get("status"):

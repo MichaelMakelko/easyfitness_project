@@ -6,7 +6,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from api.whatsapp_client import send_whatsapp_message
-from config import MAGICLINE_TEST_CUSTOMER_ID, VERIFY_TOKEN
+from config import VERIFY_TOKEN
 from model.llama_model import LlamaBot
 from services.booking_service import BookingService
 from services.chat_service import ChatService
@@ -114,7 +114,7 @@ def _handle_text_message(phone: str, text: str) -> None:
             print(f"📝 Profil aktualisiert: {extracted_profil}")
 
         # Update status if name was extracted
-        if extracted_profil.get("name") and customer["name"] == "du":
+        if extracted_profil.get("vorname") and customer["name"] == "du":
             customer_service.update_status(phone, "Name bekannt")
 
         # Handle booking intent
@@ -140,6 +140,10 @@ def _handle_booking_if_needed(
 ) -> str:
     """
     Check for booking intent and process if needed.
+
+    Uses two different flows:
+    1. Regular booking: If customer has magicline_customer_id
+    2. Trial offer booking: If customer is a new lead (no magicline_customer_id)
 
     Args:
         phone: Customer phone number
@@ -170,7 +174,8 @@ def _handle_booking_if_needed(
     # If we have date but no time, ask for time
     if extracted_date and not extracted_time and not probetraining_datum:
         print("⚠️ Datum vorhanden aber keine Uhrzeit - frage nach Uhrzeit")
-        return f"{reply}\n\nUm welche Uhrzeit möchtest du am {_format_date_german(extracted_date)} vorbeikommen? 🕐"
+        # Don't use LLM reply - ask directly for time
+        return f"Um welche Uhrzeit möchtest du am {_format_date_german(extracted_date)} vorbeikommen? 🕐"
 
     # Get full datetime
     start_date_time = probetraining_datum or extract_date_time(combined_text)
@@ -181,23 +186,59 @@ def _handle_booking_if_needed(
         print("⚠️ Kein vollständiges Datum/Zeit gefunden - Buchung übersprungen")
         return reply
 
-    # Try to book (use test customer ID as fallback for unregistered users)
-    customer_id = customer.get("profil", {}).get("magicline_customer_id") or MAGICLINE_TEST_CUSTOMER_ID
-    print(f"📅 Versuche Buchung für Customer-ID: {customer_id}")
+    # Check if customer has MagicLine ID (registered customer)
+    profil = customer.get("profil", {})
+    magicline_customer_id = profil.get("magicline_customer_id")
 
-    success, message, booking_id = booking_service.try_book(
-        customer_id=customer_id,
-        start_datetime=start_date_time,
-    )
+    if magicline_customer_id:
+        # ===== REGISTERED CUSTOMER FLOW =====
+        print(f"📅 Registrierter Kunde - verwende Customer-ID: {magicline_customer_id}")
+        success, message, booking_id = booking_service.try_book(
+            customer_id=magicline_customer_id,
+            start_datetime=start_date_time,
+        )
+    else:
+        # ===== TRIAL OFFER FLOW (für neue Leads) =====
+        print("📅 Neuer Lead - verwende Trial Offer Flow")
+
+        # Get required data for trial offer booking
+        vorname = profil.get("vorname") or (customer.get("name") if customer.get("name") != "du" else None)
+        nachname = profil.get("nachname")
+        email = profil.get("email")
+
+        # Check for missing required data
+        missing_fields = []
+        if not vorname:
+            missing_fields.append("Vorname")
+        if not nachname:
+            missing_fields.append("Nachname")
+        if not email:
+            missing_fields.append("E-Mail-Adresse")
+
+        if missing_fields:
+            missing_str = ", ".join(missing_fields)
+            print(f"⚠️ Fehlende Daten für Trial Offer: {missing_str}")
+            # Don't use LLM reply - it might say "ich buche dich ein" which is misleading
+            return f"Um deinen Termin zu buchen, brauche ich noch: {missing_str}. Kannst du mir diese Infos geben? 📝"
+
+        print(f"📅 Trial Offer Buchung: {vorname} {nachname} ({email})")
+        success, message, booking_id = booking_service.try_book_trial_offer(
+            first_name=vorname,
+            last_name=nachname,
+            email=email,
+            start_datetime=start_date_time,
+        )
 
     print(f"📅 Buchungsergebnis: success={success}, message={message}, booking_id={booking_id}")
 
     if success:
         customer["last_booking_id"] = booking_id
         customer_service.update_status(phone, "Probetraining gebucht")
-        return f"{reply} ✅ {message}"
+        # Use only system message to avoid redundancy
+        return f"✅ {message}"
     else:
-        return f"{reply} ❌ {message}"
+        # Don't use LLM reply - it might say "ich buche dich ein" which contradicts the error
+        return f"❌ {message}"
 
 
 def _format_date_german(date_str: str) -> str:
