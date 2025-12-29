@@ -5,7 +5,12 @@ from typing import Any, Optional
 
 import requests
 
-from config import MAGICLINE_API_KEY, MAGICLINE_BASE_URL, MAGICLINE_BOOKABLE_ID
+from config import (
+    MAGICLINE_API_KEY,
+    MAGICLINE_BASE_URL,
+    MAGICLINE_BOOKABLE_ID,
+    MAGICLINE_TRIAL_OFFER_CONFIG_ID,
+)
 
 
 class BookingService:
@@ -15,6 +20,7 @@ class BookingService:
         self.base_url = MAGICLINE_BASE_URL
         self.api_key = MAGICLINE_API_KEY
         self.bookable_id = MAGICLINE_BOOKABLE_ID
+        self.trial_offer_config_id = MAGICLINE_TRIAL_OFFER_CONFIG_ID
         self.headers = {
             "X-API-KEY": self.api_key,
             "Content-Type": "application/json",
@@ -150,9 +156,12 @@ class BookingService:
             Validation response dictionary
         """
         payload = {
-            "firstName": first_name,
-            "lastName": last_name,
-            "email": email,
+            "leadCustomerData": {
+                "firstname": first_name,
+                "lastname": last_name,
+                "email": email,
+            },
+            "trialOfferConfigId": self.trial_offer_config_id,
         }
 
         url = f"{self.base_url}/trial-offers/lead/validate"
@@ -190,12 +199,15 @@ class BookingService:
             email: Lead's email address
 
         Returns:
-            Response dictionary with lead data or error
+            Response dictionary with leadCustomerId or error
         """
         payload = {
-            "firstName": first_name,
-            "lastName": last_name,
-            "email": email,
+            "leadCustomerData": {
+                "firstname": first_name,
+                "lastname": last_name,
+                "email": email,
+            },
+            "trialOfferConfigId": self.trial_offer_config_id,
         }
 
         url = f"{self.base_url}/trial-offers/lead/create"
@@ -221,21 +233,19 @@ class BookingService:
             print(f"   ❌ Error: {e}")
             return {"success": False, "error": str(e)}
 
-    def validate_trial_booking(
+    def validate_appointment_for_lead(
         self,
-        first_name: str,
-        last_name: str,
-        email: str,
+        lead_customer_id: int,
         start_datetime: str,
         duration_minutes: int = 30,
     ) -> dict[str, Any]:
         """
-        Validate trial offer booking slot.
+        Validate appointment slot for a lead customer.
+
+        Uses the regular appointment validation endpoint with leadCustomerId.
 
         Args:
-            first_name: Lead's first name
-            last_name: Lead's last name
-            email: Lead's email address
+            lead_customer_id: Lead customer ID from create_lead
             start_datetime: Start time in ISO format
             duration_minutes: Appointment duration
 
@@ -245,16 +255,14 @@ class BookingService:
         end_datetime = self._calculate_end_time(start_datetime, duration_minutes)
 
         payload = {
-            "firstName": first_name,
-            "lastName": last_name,
-            "email": email,
+            "customerId": lead_customer_id,
             "bookableAppointmentId": self.bookable_id,
-            "slotStart": start_datetime,
-            "slotEnd": end_datetime,
+            "startDateTime": start_datetime,
+            "endDateTime": end_datetime,
         }
 
-        url = f"{self.base_url}/trial-offers/appointments/booking/validate"
-        print(f"🔍 VALIDATE TRIAL BOOKING REQUEST:")
+        url = f"{self.base_url}/appointments/bookable/validate"
+        print(f"🔍 VALIDATE APPOINTMENT FOR LEAD REQUEST:")
         print(f"   URL: {url}")
         print(f"   Payload: {payload}")
 
@@ -276,21 +284,19 @@ class BookingService:
             print(f"   ❌ Error: {e}")
             return {"success": False, "error": str(e)}
 
-    def book_trial_appointment(
+    def book_appointment_for_lead(
         self,
-        first_name: str,
-        last_name: str,
-        email: str,
+        lead_customer_id: int,
         start_datetime: str,
         duration_minutes: int = 30,
     ) -> dict[str, Any]:
         """
-        Book a trial offer appointment.
+        Book an appointment for a lead customer.
+
+        Uses the regular appointment booking endpoint with leadCustomerId.
 
         Args:
-            first_name: Lead's first name
-            last_name: Lead's last name
-            email: Lead's email address
+            lead_customer_id: Lead customer ID from create_lead
             start_datetime: Start time in ISO format
             duration_minutes: Appointment duration
 
@@ -300,16 +306,14 @@ class BookingService:
         end_datetime = self._calculate_end_time(start_datetime, duration_minutes)
 
         payload = {
-            "firstName": first_name,
-            "lastName": last_name,
-            "email": email,
+            "customerId": lead_customer_id,
             "bookableAppointmentId": self.bookable_id,
-            "slotStart": start_datetime,
-            "slotEnd": end_datetime,
+            "startDateTime": start_datetime,
+            "endDateTime": end_datetime,
         }
 
-        url = f"{self.base_url}/trial-offers/appointments/booking/book"
-        print(f"📅 BOOK TRIAL APPOINTMENT REQUEST:")
+        url = f"{self.base_url}/appointments/booking/book"
+        print(f"📅 BOOK APPOINTMENT FOR LEAD REQUEST:")
         print(f"   URL: {url}")
         print(f"   Payload: {payload}")
 
@@ -344,9 +348,9 @@ class BookingService:
 
         Steps:
         1. Validate lead data
-        2. Create lead in MagicLine
-        3. Validate booking slot
-        4. Book the trial appointment
+        2. Create lead in MagicLine → get leadCustomerId
+        3. Validate booking slot with leadCustomerId
+        4. Book the appointment with leadCustomerId
 
         Args:
             first_name: Lead's first name
@@ -370,25 +374,38 @@ class BookingService:
             print(f"   ❌ Lead-Validierung fehlgeschlagen: {error}")
             return False, "Deine Daten konnten nicht validiert werden. Bitte überprüfe Name und E-Mail.", None
 
-        # Step 2: Create lead
+        # Step 2: Create lead → get leadCustomerId
         lead_creation = self.create_lead(first_name, last_name, email)
         if not lead_creation.get("success"):
             error = lead_creation.get("error", "Unbekannter Fehler")
             print(f"   ❌ Lead-Erstellung fehlgeschlagen: {error}")
             return False, "Lead konnte nicht erstellt werden. Bitte versuche es erneut.", None
 
-        # Step 3: Validate booking slot
-        booking_validation = self.validate_trial_booking(
-            first_name, last_name, email, start_datetime, duration_minutes
+        lead_customer_id = lead_creation.get("leadCustomerId")
+        if not lead_customer_id:
+            print(f"   ❌ Keine leadCustomerId erhalten")
+            return False, "Lead konnte nicht erstellt werden. Bitte versuche es erneut.", None
+
+        print(f"   ✅ Lead erstellt mit ID: {lead_customer_id}")
+
+        # Step 3: Validate booking slot with leadCustomerId
+        booking_validation = self.validate_appointment_for_lead(
+            lead_customer_id, start_datetime, duration_minutes
         )
         if not booking_validation.get("success"):
             error = booking_validation.get("error", "Unbekannter Fehler")
             print(f"   ❌ Slot-Validierung fehlgeschlagen: {error}")
             return False, "Slot nicht verfügbar – probier ein anderes Datum.", None
 
-        # Step 4: Book appointment
-        booking = self.book_trial_appointment(
-            first_name, last_name, email, start_datetime, duration_minutes
+        # Check validation status
+        validation_status = booking_validation.get("validationStatus")
+        if validation_status != "AVAILABLE":
+            print(f"   ❌ Slot nicht verfügbar: {validation_status}")
+            return False, "Slot nicht verfügbar – probier ein anderes Datum.", None
+
+        # Step 4: Book appointment with leadCustomerId
+        booking = self.book_appointment_for_lead(
+            lead_customer_id, start_datetime, duration_minutes
         )
         if booking.get("success"):
             booking_id = booking.get("bookingId")
