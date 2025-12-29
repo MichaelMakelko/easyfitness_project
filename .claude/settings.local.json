@@ -1,11 +1,13 @@
 {
-	"permissions": {
-		"allow": [
-			"Bash(git checkout:*)",
-			"Bash(git add:*)",
-			"Bash(git commit -m \"$\\(cat <<''EOF''\nAdd test customer ID fallback for MagicLine booking\n\n- Add MAGICLINE_TEST_CUSTOMER_ID config variable for testing bookings\n  with unregistered users\n- Use test customer ID as fallback when customer has no MagicLine ID\n- Add CLAUDE.md documentation for Claude Code\n\n🤖 Generated with [Claude Code]\\(https://claude.ai/code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-			"Bash(git commit:*)",
-			"Bash(git push:*)"
-		]
-	}
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd test customer ID fallback for MagicLine booking\n\n- Add MAGICLINE_TEST_CUSTOMER_ID config variable for testing bookings\n  with unregistered users\n- Use test customer ID as fallback when customer has no MagicLine ID\n- Add CLAUDE.md documentation for Claude Code\n\n🤖 Generated with [Claude Code]\\(https://claude.ai/code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)"
+    ]
+  }
 }
