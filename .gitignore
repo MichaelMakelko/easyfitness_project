@@ -13,6 +13,12 @@ env/
 
 # Data
 data/
+sessions/
+.session_cache.json
+.session_prompt.md
+.session_response.md
+PROJECT_CONTEXT.md
+
 
 # IDE
 .idea/
