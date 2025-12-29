@@ -11,12 +11,8 @@ from model.llama_model import LlamaBot
 from services.booking_service import BookingService
 from services.chat_service import ChatService
 from services.customer_service import CustomerService
-from utils.text_parser import (
-    extract_booking_intent,
-    extract_date_only,
-    extract_date_time,
-    extract_time_only,
-)
+from services.extraction_service import ExtractionService
+from utils.text_parser import extract_booking_intent
 
 # Initialize services
 webhook_bp = Blueprint("webhook", __name__)
@@ -24,6 +20,7 @@ llm = LlamaBot()
 customer_service = CustomerService()
 chat_service = ChatService(llm)
 booking_service = BookingService()
+extraction_service = ExtractionService(llm)
 
 # Track processed message IDs to avoid duplicates (WhatsApp retries)
 processed_message_ids: set[str] = set()
@@ -103,22 +100,37 @@ def _handle_text_message(phone: str, text: str) -> None:
         customer = customer_service.get(phone)
         history = customer_service.get_history(phone, limit=12)
 
-        # Generate response with profile extraction
+        # Extract customer data from user message (LLM-based extraction)
+        print("🔍 Extrahiere Kundendaten...")
+        extracted_data = extraction_service.extract_customer_data(text)
+
+        # Update profile with extracted data
+        if any(v for v in extracted_data.values() if v):
+            customer_service.update_profil(phone, extracted_data)
+            print(f"📝 Profil aktualisiert: {extracted_data}")
+            # Refresh customer data after update
+            customer = customer_service.get(phone)
+
+        # Generate response
         print("🤖 Generiere Antwort...")
         reply, extracted_profil = chat_service.generate_response(customer, history, text)
         print(f"✅ Antwort generiert: {reply[:100]}...")
 
-        # Update profile if data was extracted
+        # Update profile if LLM also extracted data (merge with existing)
         if extracted_profil:
             customer_service.update_profil(phone, extracted_profil)
-            print(f"📝 Profil aktualisiert: {extracted_profil}")
+            print(f"📝 Profil (LLM) aktualisiert: {extracted_profil}")
 
-        # Update status if name was extracted
-        if extracted_profil.get("vorname") and customer["name"] == "du":
+        # Update status if name was extracted (from extraction service or LLM)
+        vorname_found = extracted_data.get("vorname") or extracted_profil.get("vorname")
+        if vorname_found and customer["name"] == "du":
             customer_service.update_status(phone, "Name bekannt")
 
-        # Handle booking intent
-        reply = _handle_booking_if_needed(phone, text, reply, extracted_profil, customer)
+        # Refresh customer data before booking check to get latest profile
+        customer = customer_service.get(phone)
+
+        # Handle booking intent (pass extracted_data for date/time)
+        reply = _handle_booking_if_needed(phone, text, reply, extracted_data, customer)
 
         # Save conversation and send reply
         customer_service.update_history(phone, text, reply)
@@ -135,7 +147,7 @@ def _handle_booking_if_needed(
     phone: str,
     text: str,
     reply: str,
-    extracted_profil: dict[str, Any],
+    extracted_data: dict[str, Any],
     customer: dict[str, Any],
 ) -> str:
     """
@@ -149,7 +161,7 @@ def _handle_booking_if_needed(
         phone: Customer phone number
         text: Customer message
         reply: Current bot reply
-        extracted_profil: Extracted profile data
+        extracted_data: LLM-extracted data (vorname, nachname, email, datum, uhrzeit)
         customer: Customer data
 
     Returns:
@@ -161,24 +173,20 @@ def _handle_booking_if_needed(
     if not booking_intent:
         return reply
 
-    combined_text = (text + reply).lower()
+    # Use LLM-extracted date/time
+    extracted_date = extracted_data.get("datum")
+    extracted_time = extracted_data.get("uhrzeit")
 
-    # Check what we have from the conversation
-    probetraining_datum = extracted_profil.get("probetraining_datum")
-    extracted_date = extract_date_only(combined_text)
-    extracted_time = extract_time_only(combined_text)
-
-    print(f"📅 Extrahiertes Datum: {extracted_date}")
-    print(f"📅 Extrahierte Uhrzeit: {extracted_time}")
+    print(f"📅 Extrahiertes Datum (LLM): {extracted_date}")
+    print(f"📅 Extrahierte Uhrzeit (LLM): {extracted_time}")
 
     # If we have date but no time, ask for time
-    if extracted_date and not extracted_time and not probetraining_datum:
+    if extracted_date and not extracted_time:
         print("⚠️ Datum vorhanden aber keine Uhrzeit - frage nach Uhrzeit")
-        # Don't use LLM reply - ask directly for time
         return f"Um welche Uhrzeit möchtest du am {_format_date_german(extracted_date)} vorbeikommen? 🕐"
 
-    # Get full datetime
-    start_date_time = probetraining_datum or extract_date_time(combined_text)
+    # Build full datetime from LLM extraction
+    start_date_time = extraction_service.build_datetime_iso(extracted_date, extracted_time)
 
     print(f"📅 Vollständiges Datum/Zeit: {start_date_time}")
 
