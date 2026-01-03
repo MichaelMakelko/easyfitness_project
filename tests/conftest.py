@@ -8,27 +8,26 @@ from pathlib import Path
 from typing import Any, Generator
 from unittest.mock import MagicMock, patch
 
+# ==================== Environment Setup ====================
+# IMPORTANT: Set test environment variables BEFORE any other imports
+# This must happen at module level, before pytest fixtures run,
+# because config.py loads .env immediately on import
+
+os.environ["VERIFY_TOKEN"] = "test_verify_token"
+os.environ["ACCESS_TOKEN"] = "test_access_token"
+os.environ["PHONE_NUMBER_ID"] = "123456789"
+os.environ["MODEL_PATH"] = "/fake/model/path"
+os.environ["MAGICLINE_BASE_URL"] = "https://mock-api.magicline.com/v1"
+os.environ["MAGICLINE_API_KEY"] = "test_api_key"
+os.environ["MAGICLINE_BOOKABLE_ID"] = "100"
+os.environ["MAGICLINE_STUDIO_ID"] = "200"
+os.environ["MAGICLINE_TRIAL_OFFER_CONFIG_ID"] = "300"
+os.environ["MAGICLINE_TEST_CUSTOMER_ID"] = "999"
+
 import pytest
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-
-# ==================== Environment Setup ====================
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_environment():
-    """Set up test environment variables before any imports."""
-    os.environ.setdefault("VERIFY_TOKEN", "test_verify_token")
-    os.environ.setdefault("ACCESS_TOKEN", "test_access_token")
-    os.environ.setdefault("PHONE_NUMBER_ID", "123456789")
-    os.environ.setdefault("MODEL_PATH", "/fake/model/path")
-    os.environ.setdefault("MAGICLINE_BASE_URL", "https://mock-api.magicline.com/v1")
-    os.environ.setdefault("MAGICLINE_API_KEY", "test_api_key")
-    os.environ.setdefault("MAGICLINE_BOOKABLE_ID", "100")
-    os.environ.setdefault("MAGICLINE_STUDIO_ID", "200")
-    os.environ.setdefault("MAGICLINE_TRIAL_OFFER_CONFIG_ID", "300")
-    os.environ.setdefault("MAGICLINE_TEST_CUSTOMER_ID", "999")
 
 
 # ==================== Mock LLM Fixtures ====================
