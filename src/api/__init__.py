@@ -1,7 +1,9 @@
 # api/__init__.py
 """WhatsApp API integration module."""
 
-from api.routes import webhook_bp
+# NOTE: Do NOT import routes here - it instantiates LlamaBot at module level,
+# which breaks test imports. Import webhook_bp directly from api.routes where needed.
+
 from api.whatsapp_client import (
     WhatsAppClient,
     send_outbound_message,
@@ -10,7 +12,6 @@ from api.whatsapp_client import (
 )
 
 __all__ = [
-    "webhook_bp",
     "WhatsAppClient",
     "send_whatsapp_message",
     "send_template_message",

@@ -119,6 +119,7 @@ class TestWebhookPost:
 class TestWebhookMessageProcessing:
     """Tests for webhook message processing logic."""
 
+    @patch("api.routes.processed_message_ids", set())
     @patch("api.routes.send_whatsapp_message")
     @patch("api.routes.customer_service")
     @patch("api.routes.chat_service")
@@ -151,6 +152,7 @@ class TestWebhookMessageProcessing:
 
         assert response.status_code == 200
 
+    @patch("api.routes.processed_message_ids", set())
     @patch("api.routes.send_whatsapp_message")
     @patch("api.routes.customer_service")
     @patch("api.routes.chat_service")

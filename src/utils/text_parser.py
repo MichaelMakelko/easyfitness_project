@@ -18,11 +18,15 @@ def extract_name(text: str) -> Optional[str]:
         Extracted name or None if not found
     """
     lower = text.lower()
-    triggers = ["ich heiße", "mein name ist", "bin der ", "bin die ", "ich bin "]
+    # Support both "ß" and "ss" spelling for German
+    triggers = ["ich heiße", "ich heisse", "mein name ist", "bin der ", "bin die ", "ich bin "]
 
     for trigger in triggers:
         if trigger in lower:
-            candidate = lower.split(trigger)[-1].strip().split()[0].capitalize()
+            remaining = lower.split(trigger)[-1].strip().split()
+            if not remaining:
+                continue
+            candidate = remaining[0].capitalize()
             if 2 <= len(candidate) <= 20 and candidate.lower() not in ["ich", "der", "die", "und"]:
                 return candidate
     return None

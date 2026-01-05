@@ -232,12 +232,14 @@ class TestUpdateHistory:
         service.get("491234567890")
 
         # Add 60 message pairs (120 messages total)
+        # Trim happens once when >100: at call 51 (102 msgs → 80)
+        # Then calls 52-60 add 18 more messages → 98 total
         for i in range(60):
             service.update_history("491234567890", f"User {i}", f"Bot {i}")
 
         customer = service.get("491234567890")
-        # Should be trimmed to 80 messages (keep_history)
-        assert len(customer["history"]) == 80
+        # After trim at 102→80, plus 9 more calls (18 msgs) = 98
+        assert len(customer["history"]) == 98
 
     def test_update_history_keeps_most_recent(self, temp_customers_file):
         """Test trimming keeps most recent messages."""
