@@ -139,12 +139,13 @@ def extract_booking_intent(text: str, reply: str, customer_context: dict = None)
     combined = (text + reply).lower()
 
     # Buchungs-Keywords (eines davon reicht) - erweitert für LLM-Varianten
+    # NOTE: "kommen" removed - too generic, causes false positives like "kann nicht kommen"
     booking_keywords = [
         "probetraining", "probentraining", "probe training",  # inkl. LLM-Variante
         "termin", "buchen", "buchung", "gebucht",
         "anmelden", "anmeldung", "reservieren", "reservierung",
         "training machen", "training buchen",
-        "vorbeikommen", "kommen", "vorbei",  # erweitert
+        "vorbeikommen", "vorbei kommen",  # "kommen" allein zu generisch
         "ausprobieren", "testen", "probieren",
         "einbuchen", "eintragen",
     ]
@@ -306,11 +307,14 @@ def extract_date_time(text: str) -> Optional[str]:
     Returns:
         ISO 8601 formatted datetime string or None
     """
+    from constants import get_timezone_offset
+
     date = extract_date_only(text)
     time = extract_time_only(text)
 
     if date and time:
-        return f"{date}T{time}:00+01:00"
+        tz_offset = get_timezone_offset()
+        return f"{date}T{time}:00{tz_offset}"
 
     return None
 

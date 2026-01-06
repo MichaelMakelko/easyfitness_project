@@ -221,3 +221,18 @@ class CustomerService:
         """
         customer = self.get(phone)
         return customer["profil"].get("bookings", [])
+
+    def clear_booking_request(self, phone: str) -> None:
+        """
+        Clear temporary booking request data (datum, uhrzeit).
+
+        Used after failed booking attempts to prevent booking loop
+        where all_data_complete keeps triggering new booking attempts.
+
+        Args:
+            phone: Customer phone number
+        """
+        customer = self.get(phone)
+        customer["profil"]["datum"] = None
+        customer["profil"]["uhrzeit"] = None
+        self.save()

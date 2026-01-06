@@ -143,10 +143,18 @@ def _handle_text_message(phone: str, text: str) -> None:
         reply, extracted_profil = chat_service.generate_response(customer, history, text)
         print(f"✅ Antwort generiert: {reply[:100]}...")
 
-        # Update profile if LLM also extracted data (merge with existing)
+        # Update profile if LLM also extracted data
+        # IMPORTANT: Only use LLM values that weren't already extracted by Regex
+        # Regex is more reliable for names/email, LLM is fallback
         if extracted_profil:
-            customer_service.update_profil(phone, extracted_profil)
-            print(f"📝 Profil (LLM) aktualisiert: {extracted_profil}")
+            # Filter out fields that Regex already extracted (Regex takes priority)
+            llm_only_fields = {
+                k: v for k, v in extracted_profil.items()
+                if v is not None and not extracted_data.get(k)
+            }
+            if llm_only_fields:
+                customer_service.update_profil(phone, llm_only_fields)
+                print(f"📝 Profil (LLM, ohne Regex-Duplikate): {llm_only_fields}")
 
         # Update status if name was extracted and customer was previously unknown
         # Use original_name to avoid race condition after profile update
@@ -362,5 +370,9 @@ def _handle_booking_if_needed(
         # Use only system message to avoid redundancy
         return f"✅ {message}"
     else:
+        # Clear datum/uhrzeit to prevent booking loop on next message
+        # (otherwise all_data_complete stays True and triggers booking again)
+        customer_service.clear_booking_request(phone)
+        print("📅 Datum/Uhrzeit gelöscht nach fehlgeschlagener Buchung")
         # Don't use LLM reply - it might say "ich buche dich ein" which contradicts the error
         return f"❌ {message}"
