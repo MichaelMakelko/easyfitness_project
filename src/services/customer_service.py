@@ -64,6 +64,7 @@ class CustomerService:
             "follow_up_datum": None,
             # Booking Tracking
             "last_booking_id": None,
+            "bookings": [],  # List of booking records
         }
 
     def get(self, phone: str) -> dict[str, Any]:
@@ -165,3 +166,58 @@ class CustomerService:
         """
         customer = self.get(phone)
         return customer["history"][-limit:]
+
+    def add_booking(
+        self,
+        phone: str,
+        booking_id: Optional[Any],
+        appointment_datetime: str,
+        booking_type: str = "trial_offer",
+    ) -> None:
+        """
+        Add a booking record to customer's booking history.
+
+        Args:
+            phone: Customer phone number
+            booking_id: MagicLine booking ID (int from API, stored as string)
+            appointment_datetime: Scheduled appointment datetime (ISO format)
+            booking_type: Type of booking ('trial_offer' or 'regular')
+        """
+        customer = self.get(phone)
+
+        # Ensure bookings list exists (for existing customers)
+        if "bookings" not in customer["profil"]:
+            customer["profil"]["bookings"] = []
+
+        # Convert booking_id to string for consistency (API returns int)
+        booking_id_str = str(booking_id) if booking_id is not None else None
+
+        booking_record = {
+            "booking_id": booking_id_str,
+            "appointment_datetime": appointment_datetime,
+            "booked_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "type": booking_type,
+            "status": "confirmed",
+        }
+
+        customer["profil"]["bookings"].append(booking_record)
+        customer["profil"]["last_booking_id"] = booking_id_str
+
+        # Clear temporary booking data after successful booking
+        customer["profil"]["datum"] = None
+        customer["profil"]["uhrzeit"] = None
+
+        self.save()
+
+    def get_bookings(self, phone: str) -> list[dict[str, Any]]:
+        """
+        Get all bookings for a customer.
+
+        Args:
+            phone: Customer phone number
+
+        Returns:
+            List of booking records
+        """
+        customer = self.get(phone)
+        return customer["profil"].get("bookings", [])

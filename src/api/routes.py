@@ -201,12 +201,12 @@ def _handle_booking_if_needed(
     extracted_time = extracted_data.get("uhrzeit")
 
     # Regex fallback if LLM failed
+    date_from_regex = False
     if not extracted_date:
         extracted_date = extract_date_only(text)
         if extracted_date:
             print(f"📅 Datum (Regex-Fallback): {extracted_date}")
-            # Save to profile for context
-            customer_service.update_profil(phone, {"datum": extracted_date})
+            date_from_regex = True
 
     if not extracted_time:
         extracted_time = extract_time_only(text)
@@ -228,8 +228,9 @@ def _handle_booking_if_needed(
 
     # If we have date but no time, ask for time
     if extracted_date and not extracted_time:
-        # Store the date for next message
-        customer_service.update_profil(phone, {"datum": extracted_date})
+        # Only save if we got a new date (avoid redundant saves)
+        if date_from_regex or extracted_data.get("datum"):
+            customer_service.update_profil(phone, {"datum": extracted_date})
         print("⚠️ Datum vorhanden aber keine Uhrzeit - frage nach Uhrzeit")
         date_german = format_date_german(extracted_date)
         return BotMessages.missing_time(date_german)
@@ -290,9 +291,18 @@ def _handle_booking_if_needed(
     print(f"📅 Buchungsergebnis: success={success}, message={message}, booking_id={booking_id}")
 
     if success:
-        # Persist booking_id to customer profile
-        customer_service.update_profil(phone, {"last_booking_id": booking_id})
+        # Determine booking type
+        booking_type = "regular" if magicline_customer_id else "trial_offer"
+
+        # Store complete booking record
+        customer_service.add_booking(
+            phone=phone,
+            booking_id=booking_id,
+            appointment_datetime=start_date_time,
+            booking_type=booking_type,
+        )
         customer_service.update_status(phone, CustomerStatus.TRIAL_BOOKED)
+        print(f"📅 Buchung gespeichert: {booking_id} für {start_date_time}")
         # Use only system message to avoid redundancy
         return f"✅ {message}"
     else:

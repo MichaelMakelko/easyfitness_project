@@ -32,7 +32,7 @@ class TestExtractCustomerData:
 
     def test_extract_full_data(self, extraction_service, mock_llm, future_date):
         """Test extraction of all fields from LLM response."""
-        mock_llm.generate.return_value = f'''
+        mock_llm.generate_extraction.return_value = f'''
         {{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}
         '''
 
@@ -46,7 +46,7 @@ class TestExtractCustomerData:
 
     def test_extract_partial_data(self, extraction_service, mock_llm):
         """Test extraction when only some fields present."""
-        mock_llm.generate.return_value = '{"vorname": "Max", "nachname": null, "email": null, "datum": null, "uhrzeit": null}'
+        mock_llm.generate_extraction.return_value = '{"vorname": "Max", "nachname": null, "email": null, "datum": null, "uhrzeit": null}'
 
         result = extraction_service.extract_customer_data("Ich bin Max")
 
@@ -56,7 +56,7 @@ class TestExtractCustomerData:
 
     def test_extract_handles_json_in_text(self, extraction_service, mock_llm):
         """Test extraction finds JSON embedded in text."""
-        mock_llm.generate.return_value = '''
+        mock_llm.generate_extraction.return_value = '''
         Some preamble text.
         {"vorname": "Anna", "nachname": "Schmidt", "email": "anna@test.de", "datum": null, "uhrzeit": null}
         Some trailing text.
@@ -69,7 +69,7 @@ class TestExtractCustomerData:
 
     def test_extract_handles_invalid_json(self, extraction_service, mock_llm):
         """Test extraction returns empty dict on invalid JSON."""
-        mock_llm.generate.return_value = "This is not valid JSON at all"
+        mock_llm.generate_extraction.return_value = "This is not valid JSON at all"
 
         result = extraction_service.extract_customer_data("Test")
 
@@ -83,7 +83,7 @@ class TestExtractCustomerData:
 
     def test_extract_handles_llm_exception(self, extraction_service, mock_llm):
         """Test extraction handles LLM exceptions gracefully."""
-        mock_llm.generate.side_effect = Exception("LLM Error")
+        mock_llm.generate_extraction.side_effect = Exception("LLM Error")
 
         result = extraction_service.extract_customer_data("Test")
 
@@ -92,7 +92,7 @@ class TestExtractCustomerData:
 
     def test_extract_filters_null_string_values(self, extraction_service, mock_llm, future_date):
         """Test that 'null' and 'none' string values are converted to None."""
-        mock_llm.generate.return_value = f'{{"vorname": "null", "nachname": "none", "email": "", "datum": "{future_date}", "uhrzeit": "14:00"}}'
+        mock_llm.generate_extraction.return_value = f'{{"vorname": "null", "nachname": "none", "email": "", "datum": "{future_date}", "uhrzeit": "14:00"}}'
 
         result = extraction_service.extract_customer_data("Test")
 
@@ -103,18 +103,18 @@ class TestExtractCustomerData:
 
     def test_extract_calls_llm_with_correct_messages(self, extraction_service, mock_llm):
         """Test LLM is called with correct message structure."""
-        mock_llm.generate.return_value = '{"vorname": null, "nachname": null, "email": null, "datum": null, "uhrzeit": null}'
+        mock_llm.generate_extraction.return_value = '{"vorname": null, "nachname": null, "email": null, "datum": null, "uhrzeit": null}'
 
         extraction_service.extract_customer_data("Hallo, ich bin Max!")
 
-        call_args = mock_llm.generate.call_args[0][0]
+        call_args = mock_llm.generate_extraction.call_args[0][0]
         assert call_args[0]["role"] == "system"
         assert call_args[1]["role"] == "user"
         assert "Hallo, ich bin Max!" in call_args[1]["content"]
 
     def test_extract_trims_whitespace(self, extraction_service, mock_llm):
         """Test extracted values have whitespace trimmed."""
-        mock_llm.generate.return_value = '{"vorname": "  Max  ", "nachname": " Mustermann ", "email": null, "datum": null, "uhrzeit": null}'
+        mock_llm.generate_extraction.return_value = '{"vorname": "  Max  ", "nachname": " Mustermann ", "email": null, "datum": null, "uhrzeit": null}'
 
         result = extraction_service.extract_customer_data("Test")
 

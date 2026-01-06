@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from constants import validate_email, validate_name, build_datetime_iso
+from constants import validate_email, validate_name
 
 
 class ExtractionService:
@@ -44,7 +44,7 @@ Regeln:
         Initialize extraction service.
 
         Args:
-            llm_model: LLM model instance with generate() method
+            llm_model: LLM model instance with generate_extraction() method
         """
         self.llm = llm_model
 
@@ -81,7 +81,7 @@ Regeln:
         ]
 
         try:
-            raw_response = self.llm.generate(messages)
+            raw_response = self.llm.generate_extraction(messages)
             print(f"🔍 EXTRACTION RAW: {raw_response[:200]}...")
 
             extracted = self._parse_extraction_response(raw_response)

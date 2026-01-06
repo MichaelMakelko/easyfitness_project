@@ -282,7 +282,7 @@ class TestExtractionIntegration:
     def test_extraction_builds_datetime(self, future_date):
         """Test extraction service builds ISO datetime correctly."""
         mock_llm = MagicMock()
-        mock_llm.generate.return_value = f'{{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
+        mock_llm.generate_extraction.return_value = f'{{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
 
         service = ExtractionService(mock_llm)
         result = service.extract_customer_data("Probetraining am 20.01. um 14 Uhr")
@@ -295,7 +295,7 @@ class TestExtractionIntegration:
     def test_extraction_missing_time_no_datetime(self, future_date):
         """Test no datetime built when time is missing."""
         mock_llm = MagicMock()
-        mock_llm.generate.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
 
         service = ExtractionService(mock_llm)
         result = service.extract_customer_data("Probetraining am 20.01.")
@@ -321,7 +321,7 @@ class TestEndToEndScenarios:
         assert customer["status"] == "neuer Interessent"
 
         # Step 2: Customer provides name
-        mock_llm.generate.return_value = '{"vorname": "Max", "nachname": "Mustermann", "email": null, "datum": null, "uhrzeit": null}'
+        mock_llm.generate_extraction.return_value = '{"vorname": "Max", "nachname": "Mustermann", "email": null, "datum": null, "uhrzeit": null}'
         extraction_service = ExtractionService(mock_llm)
         extracted = extraction_service.extract_customer_data("Ich bin Max Mustermann")
 
@@ -336,7 +336,7 @@ class TestEndToEndScenarios:
         assert customer["name"] == "Max"
 
         # Step 3: Customer provides email and booking request
-        mock_llm.generate.return_value = f'{{"vorname": null, "nachname": null, "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
         extracted = extraction_service.extract_customer_data("Probetraining am 20.01. um 14 Uhr, email max@test.de")
 
         customer_service.update_profil("491234567890", {"email": extracted["email"]})

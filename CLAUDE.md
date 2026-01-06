@@ -272,9 +272,11 @@ Fixed critical bugs preventing the booking flow from working correctly. The main
 ```
 
 ### Known Limitations / Future Work
-1. **LLM extraction still unreliable** - Regex fallback compensates but LLM should be improved
-2. **Attention mask warning** - `pad token is same as eos token` warning appears but doesn't break functionality
-3. **No booking confirmation persistence** - After successful booking, customer status changes but no booking details stored long-term
+~~1. **LLM extraction still unreliable** - Fixed: Added `generate_extraction()` with temperature=0.1~~
+~~2. **Attention mask warning** - Fixed: Proper pad_token configuration~~
+~~3. **No booking confirmation persistence** - Fixed: Added `bookings` list with full booking history~~
+
+All major limitations from 2026-01-05 session have been addressed in the 2026-01-06 session.
 
 ### Key Code Patterns
 
