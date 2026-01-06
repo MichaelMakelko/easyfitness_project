@@ -2,12 +2,13 @@
 """Text parsing utilities for extracting information from messages."""
 
 import re
+from datetime import datetime, timedelta
 from typing import Optional
 
 
 def extract_name(text: str) -> Optional[str]:
     """
-    Extract customer name from message text.
+    Extract customer first name from message text.
 
     Looks for common German phrases like "ich heiße", "mein name ist", etc.
 
@@ -15,7 +16,7 @@ def extract_name(text: str) -> Optional[str]:
         text: The message text to parse
 
     Returns:
-        Extracted name or None if not found
+        Extracted first name or None if not found
     """
     lower = text.lower()
     # Support both "ß" and "ss" spelling for German
@@ -30,6 +31,94 @@ def extract_name(text: str) -> Optional[str]:
             if 2 <= len(candidate) <= 20 and candidate.lower() not in ["ich", "der", "die", "und"]:
                 return candidate
     return None
+
+
+def extract_full_name(text: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extract full name (vorname and nachname) from message text.
+
+    Supports various formats:
+    - "Ich heiße Max Mustermann"
+    - "Mein Name ist Anna Schmidt"
+    - "Max Mustermann, max@email.de" (name before comma+email)
+    - "Vorname Nachname" (two capitalized words at start)
+
+    Args:
+        text: The message text to parse
+
+    Returns:
+        Tuple of (vorname, nachname), either can be None
+    """
+    # Pattern 1: Traditional triggers with two names
+    lower = text.lower()
+    triggers = [
+        ("ich heiße ", 2),
+        ("ich heisse ", 2),
+        ("mein name ist ", 2),
+        ("ich bin ", 2),
+    ]
+
+    for trigger, min_words in triggers:
+        if trigger in lower:
+            # Get the part after the trigger
+            idx = lower.index(trigger)
+            remaining = text[idx + len(trigger):].strip()
+            words = remaining.split()
+
+            if len(words) >= 2:
+                # Filter out articles and common words
+                skip_words = {"der", "die", "das", "ein", "eine", "und", "oder"}
+                clean_words = [w for w in words[:3] if w.lower() not in skip_words]
+
+                if len(clean_words) >= 2:
+                    vorname = clean_words[0].strip(",.!?")
+                    nachname = clean_words[1].strip(",.!?")
+                    if _is_valid_name(vorname) and _is_valid_name(nachname):
+                        return vorname.capitalize(), nachname.capitalize()
+
+    # Pattern 2: "Vorname Nachname, email@domain.de" or "Vorname Nachname email@domain.de"
+    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
+    if email_match:
+        # Get text before the email
+        before_email = text[:email_match.start()].strip().rstrip(",").strip()
+        words = before_email.split()
+
+        if len(words) >= 2:
+            # Take last two words before email as name
+            vorname = words[-2].strip(",.!?")
+            nachname = words[-1].strip(",.!?")
+            if _is_valid_name(vorname) and _is_valid_name(nachname):
+                return vorname.capitalize(), nachname.capitalize()
+        elif len(words) == 1:
+            # Only one word, could be just vorname
+            vorname = words[0].strip(",.!?")
+            if _is_valid_name(vorname):
+                return vorname.capitalize(), None
+
+    # Pattern 3: Two capitalized words at the start (looks like a name)
+    words = text.split()
+    if len(words) >= 2:
+        first_word = words[0].strip(",.!?")
+        second_word = words[1].strip(",.!?")
+
+        # Both words should start with uppercase and be valid names
+        if (first_word and first_word[0].isupper() and
+            second_word and second_word[0].isupper() and
+            _is_valid_name(first_word) and _is_valid_name(second_word)):
+            # Make sure it's not a sentence start
+            if second_word.lower() not in {"ist", "bin", "habe", "möchte", "will", "kann", "heiße", "heisse"}:
+                return first_word, second_word
+
+    return None, None
+
+
+def _is_valid_name(name: str) -> bool:
+    """Check if a string looks like a valid name."""
+    if not name or len(name) < 2 or len(name) > 30:
+        return False
+    # Name should be mostly letters
+    letter_count = sum(1 for c in name if c.isalpha())
+    return letter_count >= len(name) * 0.8
 
 
 def extract_booking_intent(text: str, reply: str, customer_context: dict = None) -> bool:
@@ -65,6 +154,8 @@ def extract_booking_intent(text: str, reply: str, customer_context: dict = None)
     has_date = bool(
         re.search(r'\d{1,2}\.\d{1,2}\.\d{2,4}', combined) or  # DD.MM.YYYY oder DD.MM.YY
         re.search(r'\d{1,2}\.\d{1,2}\.', combined) or  # DD.MM.
+        re.search(r'(?:am|den|vom|bis|ab)\s*\d{1,2}\.\d{1,2}(?!\d|\.)', combined) or  # "am 9.1"
+        re.search(r'\d{1,2}\.\d{1,2}\s*(?:um|uhr|kommen|gehen)', combined) or  # "9.1 um 10"
         re.search(r'(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)', combined) or
         re.search(r'(morgen|übermorgen|nächste woche|diese woche)', combined)
     )
@@ -101,8 +192,10 @@ def extract_date_only(text: str) -> Optional[str]:
     Extract only date from text in German format.
 
     Supports:
-    - DD.MM.YYYY
-    - DD.MM. (assumes current year)
+    - DD.MM.YYYY (e.g., "25.12.2026")
+    - DD.MM. (e.g., "25.12.")
+    - DD.MM (e.g., "9.1" or "am 9.1") - common German short format
+    - "am DD.MM" context (e.g., "am 9.1 kommen")
 
     Args:
         text: Text to parse
@@ -110,24 +203,66 @@ def extract_date_only(text: str) -> Optional[str]:
     Returns:
         Date string in YYYY-MM-DD format or None
     """
-    from datetime import datetime
+    now = datetime.now()
 
     # Try full date DD.MM.YYYY
     date_match = re.search(r'(\d{1,2})\.(\d{1,2})\.(\d{4})', text)
-
-    # Try short date DD.MM. (without year - assumes current year)
-    if not date_match:
-        short_date = re.search(r'(\d{1,2})\.(\d{1,2})\.', text)
-        if short_date:
-            day, month = short_date.groups()
-            year = str(datetime.now().year)
-            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-
     if date_match:
         day, month, year = date_match.groups()
         return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
 
+    # Try short date DD.MM. (with trailing dot)
+    short_date_dot = re.search(r'(\d{1,2})\.(\d{1,2})\.(?!\d)', text)
+    if short_date_dot:
+        day, month = short_date_dot.groups()
+        return _build_date_with_smart_year(int(day), int(month), now)
+
+    # Try DD.MM without trailing dot - look for context like "am 9.1" or "9.1 um"
+    # This avoids matching decimal numbers like "1.5 Stunden"
+    short_date_context = re.search(
+        r'(?:am|den|vom|bis|ab)\s*(\d{1,2})\.(\d{1,2})(?!\d|\.)|'  # "am 9.1", "den 15.3"
+        r'(\d{1,2})\.(\d{1,2})\s*(?:um|uhr|kommen|gehen|möchte)',  # "9.1 um 10 Uhr"
+        text.lower()
+    )
+    if short_date_context:
+        groups = short_date_context.groups()
+        # Groups are (day1, month1, day2, month2) - pick the non-None pair
+        if groups[0] and groups[1]:
+            day, month = groups[0], groups[1]
+        else:
+            day, month = groups[2], groups[3]
+        return _build_date_with_smart_year(int(day), int(month), now)
+
     return None
+
+
+def _build_date_with_smart_year(day: int, month: int, now: datetime) -> Optional[str]:
+    """
+    Build date string with smart year selection.
+
+    If the date would be more than 7 days in the past, assume next year.
+
+    Args:
+        day: Day of month
+        month: Month number
+        now: Current datetime
+
+    Returns:
+        Date string in YYYY-MM-DD format or None if invalid
+    """
+    year = now.year
+
+    try:
+        candidate = datetime(year, month, day)
+
+        # If date is more than 7 days in the past, assume next year
+        if candidate < now - timedelta(days=7):
+            candidate = datetime(year + 1, month, day)
+
+        return candidate.strftime("%Y-%m-%d")
+    except ValueError:
+        # Invalid date (e.g., Feb 30)
+        return None
 
 
 def extract_time_only(text: str) -> Optional[str]:

@@ -278,17 +278,75 @@ Fixed critical bugs preventing the booking flow from working correctly. The main
 
 All major limitations from 2026-01-05 session have been addressed in the 2026-01-06 session.
 
+---
+
+## Session Notes (2026-01-06) - Live Test Fixes
+
+### Overview
+Fixed critical bugs discovered during live testing where booking conversations were failing to complete.
+
+### Key Issues Fixed
+
+#### 1. Date Parsing for "am 9.1" Format
+- Extended `extract_date_only()` to handle German short date format without trailing dot
+- Added `_build_date_with_smart_year()` for intelligent year selection at year boundaries
+- Now correctly parses: "am 9.1", "den 15.3", "9.1 um 10 Uhr"
+
+#### 2. Name Extraction from "Name, email" Format
+- Added `extract_full_name()` function to extract both vorname and nachname
+- Supports: "Britney Spears, email@test.de", "Ich heiße Max Mustermann", "Max Mustermann"
+- Added regex fallback for name extraction in `_handle_text_message()`
+
+#### 3. Extraction Priority Swap (Critical Fix)
+- **Before:** LLM first, regex fallback → LLM often returned wrong dates, overriding correct regex matches
+- **After:** Regex FIRST, LLM fallback → Regex is reliable for explicit dates, LLM only for complex cases like "morgen"
+
+#### 4. Auto-Trigger Booking When All Data Complete
+- If profile has all required data (vorname, nachname, email, datum, uhrzeit), booking is auto-triggered
+- Handles case where user provides last missing piece without saying "buchen" again
+
+#### 5. Profile Data Persistence Strategy
+- `_handle_booking_if_needed()` now follows 5-step strategy:
+  1. Load ALL stored profile data
+  2. Extract from current message (regex first, LLM fallback)
+  3. Merge: new data takes priority over stored
+  4. Check what's missing → ask or proceed
+  5. Book with complete data
+
+### Files Modified
+
+- **`src/utils/text_parser.py`**: Added `extract_full_name()`, `_is_valid_name()`, extended date regex
+- **`src/api/routes.py`**: Swapped extraction priority, added auto-trigger, added name/email regex fallback
+- **`tests/unit/test_text_parser.py`**: Added 21 new tests for `extract_full_name()` and date parsing
+
+### Current Test Status
+**219 tests passing** (was 198 before, added 21 new tests)
+
 ### Key Code Patterns
 
-**Hybrid Extraction (routes.py):**
+**Regex-First Extraction (routes.py:241-266):**
 ```python
-# Try LLM first
-extracted_date = extracted_data.get("datum")
-# Regex fallback if LLM failed
-if not extracted_date:
-    extracted_date = extract_date_only(text)
-    if extracted_date:
-        customer_service.update_profil(phone, {"datum": extracted_date})
+# === STEP 2: Extract from current message ===
+# IMPORTANT: Regex FIRST (more reliable), then LLM for complex cases like "morgen"
+new_date = extract_date_only(text)
+new_time = extract_time_only(text)
+
+# LLM fallback for complex cases (e.g., "morgen", "nächsten Montag")
+if not new_date:
+    llm_date = extracted_data.get("datum")
+    if llm_date:
+        new_date = llm_date
+```
+
+**Auto-Trigger Complete Booking (routes.py:229-235):**
+```python
+all_data_complete = bool(
+    stored_vorname and stored_nachname and stored_email and
+    stored_date and stored_time
+)
+if all_data_complete and not booking_intent:
+    print(f"📅 Alle Daten komplett - Auto-Trigger Buchung!")
+    booking_intent = True
 ```
 
 **Context-Aware Booking Intent (text_parser.py):**

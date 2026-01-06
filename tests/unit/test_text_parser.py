@@ -8,6 +8,7 @@ from utils.text_parser import (
     extract_date_only,
     extract_date_time,
     extract_email,
+    extract_full_name,
     extract_name,
     extract_time_only,
 )
@@ -137,7 +138,33 @@ class TestExtractDateOnly:
     def test_extract_date_single_digit_day_month(self):
         """Test single digit day and month are zero-padded."""
         assert extract_date_only("am 5.3.2025") == "2025-03-05"
-        assert extract_date_only("am 1.1.") == "2025-01-01"
+        # Note: "1.1." is > 7 days in past from Jan 15, so smart year logic picks next year
+        assert extract_date_only("am 1.1.") == "2026-01-01"
+        # Future date within current year
+        assert extract_date_only("am 1.2.") == "2025-02-01"
+
+    @freeze_time("2026-01-06")
+    def test_extract_date_short_format_without_trailing_dot(self):
+        """Test DD.MM format without trailing dot (common German shorthand)."""
+        # "am 9.1" = January 9th
+        assert extract_date_only("am 9.1 kommen") == "2026-01-09"
+        assert extract_date_only("Ich würde gerne am 9.1 kommen um 10 Uhr") == "2026-01-09"
+        assert extract_date_only("den 15.3 um 14 Uhr") == "2026-03-15"
+        # With "um" context after date
+        assert extract_date_only("9.1 um 10 Uhr") == "2026-01-09"
+        # Without context - should NOT match (could be decimal)
+        assert extract_date_only("Das kostet 9.1 Euro") is None
+
+    @freeze_time("2026-01-06")
+    def test_extract_date_smart_year(self):
+        """Test smart year selection for dates near year boundary."""
+        # Today is Jan 6, 2026
+        # Jan 9 is in the future -> 2026
+        assert extract_date_only("am 9.1.") == "2026-01-09"
+        # Jan 3 is 3 days ago (within 7 day window) -> 2026
+        assert extract_date_only("am 3.1.") == "2026-01-03"
+        # Dec 25 is > 7 days ago -> next year 2026 (but Dec 25 2026 is in future, so stays 2026)
+        assert extract_date_only("am 25.12.") == "2026-12-25"
 
 
 class TestExtractTimeOnly:
@@ -203,6 +230,78 @@ class TestExtractDateTime:
         """Test with 'X Uhr' time format."""
         result = extract_date_time("Termin am 20.01. um 14 Uhr")
         assert result == "2025-01-20T14:00:00+01:00"
+
+
+class TestExtractFullName:
+    """Tests for extract_full_name function."""
+
+    @pytest.mark.parametrize(
+        "text,expected_vorname,expected_nachname",
+        [
+            # Traditional triggers with two names
+            ("Ich heiße Max Mustermann", "Max", "Mustermann"),
+            ("ich heisse Anna Schmidt", "Anna", "Schmidt"),
+            ("Mein Name ist Thomas Mueller", "Thomas", "Mueller"),
+            ("mein name ist Maria Weber", "Maria", "Weber"),
+            ("Ich bin Peter Maier", "Peter", "Maier"),
+            # Name before email pattern
+            ("Britney Spears, theoneandonlybritney@outlook.de", "Britney", "Spears"),
+            ("Max Mustermann, max@test.de", "Max", "Mustermann"),
+            ("Anna Schmidt anna.schmidt@gmail.com", "Anna", "Schmidt"),
+            # Two capitalized words at start
+            ("Max Mustermann", "Max", "Mustermann"),
+            ("Anna Schmidt möchte ein Probetraining", "Anna", "Schmidt"),
+        ],
+    )
+    def test_extract_full_name_success(self, text: str, expected_vorname: str, expected_nachname: str):
+        """Test successful full name extraction from various formats."""
+        vorname, nachname = extract_full_name(text)
+        assert vorname == expected_vorname
+        assert nachname == expected_nachname
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Hallo, wie geht es?",
+            "Was kostet das Training?",
+            "Termin um 14 Uhr",
+            "",
+            "ich bin",
+            "Ich heiße",
+            "max@test.de",  # Only email, no name before it
+        ],
+    )
+    def test_extract_full_name_none(self, text: str):
+        """Test that (None, None) is returned when no full name found."""
+        vorname, nachname = extract_full_name(text)
+        assert vorname is None
+        assert nachname is None
+
+    def test_extract_full_name_filters_articles(self):
+        """Test that German articles are filtered out."""
+        # "der" and "die" should be skipped
+        vorname, nachname = extract_full_name("Ich bin der Max Mustermann")
+        assert vorname == "Max"
+        assert nachname == "Mustermann"
+
+    def test_extract_full_name_only_vorname_with_email(self):
+        """Test extraction when only first name before email."""
+        vorname, nachname = extract_full_name("Max, max@test.de")
+        assert vorname == "Max"
+        assert nachname is None
+
+    def test_extract_full_name_rejects_sentence_starts(self):
+        """Test that sentence starters are not mistaken for names."""
+        # "Ich bin" should not return "Ich" as vorname
+        vorname, nachname = extract_full_name("Ich bin interessiert")
+        assert vorname is None
+        assert nachname is None
+
+    def test_extract_full_name_with_punctuation(self):
+        """Test names are cleaned of punctuation."""
+        vorname, nachname = extract_full_name("Ich heiße Max Mustermann!")
+        assert vorname == "Max"
+        assert nachname == "Mustermann"
 
 
 class TestExtractEmail:
