@@ -52,6 +52,11 @@ class ChatService:
         profil_filled = {k: v for k, v in profil.items() if v is not None}
         profil_str = json.dumps(profil_filled, ensure_ascii=False) if profil_filled else BotMessages.NO_PROFILE_DATA
 
+        # Build booking status with only booking-relevant fields
+        # This gives the LLM clear visibility into what data is present/missing
+        booking_status = self._build_booking_status(profil)
+        booking_status_str = json.dumps(booking_status, ensure_ascii=False, indent=2)
+
         # Get current date info
         heute = datetime.now()
         wochentag = WOCHENTAGE[heute.weekday()]
@@ -63,8 +68,33 @@ class ChatService:
         prompt = prompt.replace("{{NAME}}", name)
         prompt = prompt.replace("{{STATUS}}", customer["status"])
         prompt = prompt.replace("{{PROFIL}}", profil_str)
+        prompt = prompt.replace("{{BUCHUNGSSTATUS}}", booking_status_str)
 
         return prompt
+
+    def _build_booking_status(self, profil: dict[str, Any]) -> dict[str, Any]:
+        """
+        Build booking status dict with only booking-relevant fields.
+
+        This provides the LLM with a clear view of what data is present/missing
+        for booking without overwhelming it with all profile fields.
+
+        Args:
+            profil: Full customer profile dictionary
+
+        Returns:
+            Dictionary with booking-relevant fields and their current values
+        """
+        is_existing_customer = bool(profil.get("magicline_customer_id"))
+
+        return {
+            "ist_bestandskunde": is_existing_customer,
+            "vorname": profil.get("vorname"),
+            "nachname": profil.get("nachname"),
+            "email": profil.get("email"),
+            "datum": profil.get("datum"),
+            "uhrzeit": profil.get("uhrzeit"),
+        }
 
     def build_messages(
         self, customer: dict[str, Any], history: list[dict[str, str]]

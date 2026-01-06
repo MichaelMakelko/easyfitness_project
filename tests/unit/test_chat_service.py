@@ -268,6 +268,123 @@ class TestParseResponse:
         assert "email" not in profil  # None values filtered
 
 
+class TestBuildBookingStatus:
+    """Tests for _build_booking_status method."""
+
+    def test_build_booking_status_new_customer(self, chat_service_with_temp_prompt):
+        """Test booking status for new customer (all null)."""
+        profil = {
+            "magicline_customer_id": None,
+            "vorname": None,
+            "nachname": None,
+            "email": None,
+            "datum": None,
+            "uhrzeit": None,
+        }
+
+        status = chat_service_with_temp_prompt._build_booking_status(profil)
+
+        assert status["ist_bestandskunde"] is False
+        assert status["vorname"] is None
+        assert status["nachname"] is None
+        assert status["email"] is None
+        assert status["datum"] is None
+        assert status["uhrzeit"] is None
+
+    def test_build_booking_status_existing_customer(self, chat_service_with_temp_prompt):
+        """Test booking status for existing customer with MagicLine ID."""
+        profil = {
+            "magicline_customer_id": 12345,
+            "vorname": "Max",
+            "nachname": "Mustermann",
+            "email": "max@test.de",
+            "datum": None,
+            "uhrzeit": None,
+        }
+
+        status = chat_service_with_temp_prompt._build_booking_status(profil)
+
+        assert status["ist_bestandskunde"] is True
+        assert status["vorname"] == "Max"
+        assert status["nachname"] == "Mustermann"
+        assert status["email"] == "max@test.de"
+
+    def test_build_booking_status_partial_data(self, chat_service_with_temp_prompt):
+        """Test booking status with partial data (mid-booking-flow)."""
+        profil = {
+            "magicline_customer_id": None,
+            "vorname": "Anna",
+            "nachname": None,
+            "email": "anna@test.de",
+            "datum": "2026-01-15",
+            "uhrzeit": None,
+        }
+
+        status = chat_service_with_temp_prompt._build_booking_status(profil)
+
+        assert status["ist_bestandskunde"] is False
+        assert status["vorname"] == "Anna"
+        assert status["nachname"] is None
+        assert status["email"] == "anna@test.de"
+        assert status["datum"] == "2026-01-15"
+        assert status["uhrzeit"] is None
+
+    def test_build_booking_status_complete_data(self, chat_service_with_temp_prompt):
+        """Test booking status with all data complete."""
+        profil = {
+            "magicline_customer_id": None,
+            "vorname": "Max",
+            "nachname": "Mueller",
+            "email": "max@test.de",
+            "datum": "2026-01-20",
+            "uhrzeit": "14:00",
+        }
+
+        status = chat_service_with_temp_prompt._build_booking_status(profil)
+
+        assert status["ist_bestandskunde"] is False
+        assert status["vorname"] == "Max"
+        assert status["nachname"] == "Mueller"
+        assert status["email"] == "max@test.de"
+        assert status["datum"] == "2026-01-20"
+        assert status["uhrzeit"] == "14:00"
+
+    def test_build_booking_status_empty_profil(self, chat_service_with_temp_prompt):
+        """Test booking status with completely empty profil (edge case)."""
+        profil = {}
+
+        status = chat_service_with_temp_prompt._build_booking_status(profil)
+
+        assert status["ist_bestandskunde"] is False
+        assert status["vorname"] is None
+        assert status["nachname"] is None
+        assert status["email"] is None
+        assert status["datum"] is None
+        assert status["uhrzeit"] is None
+
+    def test_build_booking_status_only_includes_booking_fields(self, chat_service_with_temp_prompt):
+        """Test that booking status only includes booking-relevant fields."""
+        profil = {
+            "magicline_customer_id": None,
+            "vorname": "Max",
+            "nachname": "Mustermann",
+            "email": "max@test.de",
+            "datum": "2026-01-15",
+            "uhrzeit": "10:00",
+            "fitness_ziel": "Muskelaufbau",
+            "alter": 30,
+            "wohnort": "Braunschweig",
+        }
+
+        status = chat_service_with_temp_prompt._build_booking_status(profil)
+
+        # Should only have 6 keys (booking-relevant)
+        assert len(status) == 6
+        assert "fitness_ziel" not in status
+        assert "alter" not in status
+        assert "wohnort" not in status
+
+
 class TestWochentage:
     """Tests for WOCHENTAGE constant."""
 

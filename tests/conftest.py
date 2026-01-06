@@ -222,6 +222,9 @@ Name: {{NAME}}
 Status: {{STATUS}}
 Bekanntes Profil: {{PROFIL}}
 
+[BUCHUNGSSTATUS]
+{{BUCHUNGSSTATUS}}
+
 [AUSGABEFORMAT]
 {"reply": "...", "profil": {...}}
 """

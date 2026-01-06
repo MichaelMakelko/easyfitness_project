@@ -368,3 +368,82 @@ data = json.loads(fixed_str)
 # Try 3: ast.literal_eval
 data = ast.literal_eval(json_str)
 ```
+
+---
+
+## Session Notes (2026-01-06 #2) - Booking Status Context for LLM
+
+### Overview
+Added booking status context to the LLM system prompt so the bot knows what data is present/missing for booking and can respond more intelligently.
+
+### Problem Solved
+Previously, the bot often:
+- Asked for data it already had (e.g., asking for name when `vorname` was stored)
+- Said "Ich buche dich ein!" when required data was missing
+- Gave contradictory responses (LLM said one thing, system overrode with hardcoded message)
+
+### Solution: Booking Status in System Prompt
+The LLM now receives a structured `[BUCHUNGSSTATUS]` section with only booking-relevant fields:
+
+```json
+{
+  "ist_bestandskunde": false,
+  "vorname": "Max",
+  "nachname": null,
+  "email": "max@test.de",
+  "datum": "2026-01-15",
+  "uhrzeit": null
+}
+```
+
+With clear instructions:
+- If a field is `null` → ask for it (ONE question per message)
+- If a field has a value → DON'T ask again
+- `ist_bestandskunde: true` → only needs datum + uhrzeit (not name/email)
+- All fields filled → confirm booking
+
+### Files Modified
+
+#### 1. `src/services/chat_service.py`
+- Added `_build_booking_status(profil)` method
+- Modified `build_system_prompt()` to inject `{{BUCHUNGSSTATUS}}`
+
+```python
+def _build_booking_status(self, profil: dict[str, Any]) -> dict[str, Any]:
+    is_existing_customer = bool(profil.get("magicline_customer_id"))
+    return {
+        "ist_bestandskunde": is_existing_customer,
+        "vorname": profil.get("vorname"),
+        "nachname": profil.get("nachname"),
+        "email": profil.get("email"),
+        "datum": profil.get("datum"),
+        "uhrzeit": profil.get("uhrzeit"),
+    }
+```
+
+#### 2. `src/prompts/fitnesstrainer_prompt.txt`
+- Added `[BUCHUNGSSTATUS]` section with clear rules and examples
+
+#### 3. `tests/conftest.py`
+- Updated `temp_prompt_file` fixture to include `{{BUCHUNGSSTATUS}}`
+
+#### 4. `tests/unit/test_chat_service.py`
+- Added 6 new tests for `_build_booking_status()`:
+  - `test_build_booking_status_new_customer`
+  - `test_build_booking_status_existing_customer`
+  - `test_build_booking_status_partial_data`
+  - `test_build_booking_status_complete_data`
+  - `test_build_booking_status_empty_profil`
+  - `test_build_booking_status_only_includes_booking_fields`
+
+### Current Test Status
+**227 tests passing** (was 221 before, added 6 new tests)
+
+### Architecture Decision: Keep Extraction Separate
+We chose **Option A**: Profil-Context + Extraction behalten
+
+- **Regex/LLM extraction remains separate** → reliable data extraction
+- **Bot gets profile context** → intelligent responses
+- **Hardcoded messages stay as fallback** → safety net if LLM misbehaves
+
+This is a non-breaking, additive change that improves bot intelligence without risking the extraction pipeline.
