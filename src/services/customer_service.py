@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from config import MEMORY_FILE
+from constants import BotMessages, CustomerStatus
 
 
 class CustomerService:
@@ -36,6 +37,9 @@ class CustomerService:
             # Personal Data (required for trial offer booking)
             "vorname": None,
             "nachname": None,
+            # Booking request data (temporary storage for multi-message booking)
+            "datum": None,  # Requested date in YYYY-MM-DD format
+            "uhrzeit": None,  # Requested time in HH:MM format
             "alter": None,
             "geschlecht": None,
             "wohnort": None,
@@ -58,6 +62,8 @@ class CustomerService:
             "interesse_level": None,
             "probetraining_datum": None,
             "follow_up_datum": None,
+            # Booking Tracking
+            "last_booking_id": None,
         }
 
     def get(self, phone: str) -> dict[str, Any]:
@@ -72,8 +78,8 @@ class CustomerService:
         """
         if phone not in self.customers:
             self.customers[phone] = {
-                "name": "du",
-                "status": "neuer Interessent",
+                "name": BotMessages.DEFAULT_NAME,
+                "status": CustomerStatus.NEW_LEAD,
                 "profil": self._default_profil(),
                 "history": [],
                 "letzter_kontakt": datetime.now().strftime("%d.%m.%Y %H:%M"),

@@ -32,24 +32,32 @@ def extract_name(text: str) -> Optional[str]:
     return None
 
 
-def extract_booking_intent(text: str, reply: str) -> bool:
+def extract_booking_intent(text: str, reply: str, customer_context: dict = None) -> bool:
     """
     Detect if a booking/appointment is being requested.
+
+    Uses keyword matching plus optional customer context for multi-message booking flows.
 
     Args:
         text: Customer message
         reply: Bot reply
+        customer_context: Optional dict with 'has_booking_data' (name+email present)
+                         and 'has_partial_datetime' (datum or uhrzeit in profile)
 
     Returns:
         True if booking intent detected
     """
     combined = (text + reply).lower()
 
-    # Buchungs-Keywords (eines davon reicht)
+    # Buchungs-Keywords (eines davon reicht) - erweitert für LLM-Varianten
     booking_keywords = [
-        "probetraining", "probe training", "termin", "buchen", "buchung",
-        "anmelden", "anmeldung", "reservieren", "training machen",
-        "vorbeikommen", "ausprobieren"
+        "probetraining", "probentraining", "probe training",  # inkl. LLM-Variante
+        "termin", "buchen", "buchung", "gebucht",
+        "anmelden", "anmeldung", "reservieren", "reservierung",
+        "training machen", "training buchen",
+        "vorbeikommen", "kommen", "vorbei",  # erweitert
+        "ausprobieren", "testen", "probieren",
+        "einbuchen", "eintragen",
     ]
     has_booking_keyword = any(kw in combined for kw in booking_keywords)
 
@@ -67,7 +75,25 @@ def extract_booking_intent(text: str, reply: str) -> bool:
         re.search(r'\d{1,2}\s*uhr', combined)  # X Uhr
     )
 
-    return has_booking_keyword and (has_date or has_time)
+    # Standard check: keyword + (date or time)
+    if has_booking_keyword and (has_date or has_time):
+        return True
+
+    # Context-aware check: If customer is in booking flow (has name+email)
+    # and provides date/time, assume booking intent even without keyword
+    if customer_context:
+        has_booking_data = customer_context.get("has_booking_data", False)
+        has_partial_datetime = customer_context.get("has_partial_datetime", False)
+
+        # Customer already in booking flow + provides date or time
+        if has_booking_data and (has_date or has_time):
+            return True
+
+        # Customer has partial booking (e.g., date stored) + provides time
+        if has_partial_datetime and (has_date or has_time):
+            return True
+
+    return False
 
 
 def extract_date_only(text: str) -> Optional[str]:

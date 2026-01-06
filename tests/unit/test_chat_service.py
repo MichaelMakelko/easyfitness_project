@@ -239,6 +239,34 @@ class TestParseResponse:
         assert reply == "Hello"
         assert profil == {}
 
+    def test_parse_response_python_dict_syntax(self, chat_service_with_temp_prompt):
+        """Test parsing Python dict syntax with single quotes (LLM sometimes returns this)."""
+        response = "{'reply': 'Hi! Was kann ich heute für dich tun?', 'profil': {'vorname': None, 'nachname': None}}"
+
+        reply, profil = chat_service_with_temp_prompt._parse_response(response)
+
+        assert reply == "Hi! Was kann ich heute für dich tun?"
+        assert profil == {}  # None values should be filtered out
+
+    def test_parse_response_python_dict_with_values(self, chat_service_with_temp_prompt):
+        """Test parsing Python dict with actual values."""
+        response = "{'reply': 'Hallo Max!', 'profil': {'vorname': 'Max', 'nachname': 'Mueller'}}"
+
+        reply, profil = chat_service_with_temp_prompt._parse_response(response)
+
+        assert reply == "Hallo Max!"
+        assert profil == {"vorname": "Max", "nachname": "Mueller"}
+
+    def test_parse_response_python_dict_with_none_and_values(self, chat_service_with_temp_prompt):
+        """Test parsing Python dict with mixed None and actual values."""
+        response = "{'reply': 'Test', 'profil': {'vorname': 'Anna', 'email': None, 'datum': '2025-01-20'}}"
+
+        reply, profil = chat_service_with_temp_prompt._parse_response(response)
+
+        assert reply == "Test"
+        assert profil == {"vorname": "Anna", "datum": "2025-01-20"}
+        assert "email" not in profil  # None values filtered
+
 
 class TestWochentage:
     """Tests for WOCHENTAGE constant."""

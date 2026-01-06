@@ -11,6 +11,7 @@ from config import (
     MAGICLINE_BOOKABLE_ID,
     MAGICLINE_TRIAL_OFFER_CONFIG_ID,
 )
+from constants import BotMessages
 
 
 class BookingService:
@@ -128,16 +129,16 @@ class BookingService:
         validation = self.validate_slot(customer_id, start_datetime, duration_minutes)
 
         if validation.get("validationStatus") != "AVAILABLE":
-            return False, "Slot nicht verfügbar – probier ein anderes Datum.", None
+            return False, BotMessages.BOOKING_SLOT_UNAVAILABLE, None
 
         # Then book
         booking = self.book_appointment(customer_id, start_datetime, duration_minutes)
 
         if booking.get("success"):
             booking_id = booking.get("bookingId")
-            return True, "Termin gebucht! Bestätigung per E-Mail unterwegs.", booking_id
+            return True, BotMessages.BOOKING_SUCCESS, booking_id
         else:
-            return False, "Leider nicht verfügbar – wähle ein anderes Datum.", None
+            return False, BotMessages.BOOKING_GENERIC_ERROR, None
 
     # ==================== TRIAL OFFER METHODS (für nicht-registrierte Leads) ====================
 
@@ -372,19 +373,19 @@ class BookingService:
         if not lead_validation.get("success"):
             error = lead_validation.get("error", "Unbekannter Fehler")
             print(f"   ❌ Lead-Validierung fehlgeschlagen: {error}")
-            return False, "Deine Daten konnten nicht validiert werden. Bitte überprüfe Name und E-Mail.", None
+            return False, BotMessages.BOOKING_VALIDATION_FAILED, None
 
         # Step 2: Create lead → get leadCustomerId
         lead_creation = self.create_lead(first_name, last_name, email)
         if not lead_creation.get("success"):
             error = lead_creation.get("error", "Unbekannter Fehler")
             print(f"   ❌ Lead-Erstellung fehlgeschlagen: {error}")
-            return False, "Lead konnte nicht erstellt werden. Bitte versuche es erneut.", None
+            return False, BotMessages.BOOKING_LEAD_CREATION_FAILED, None
 
         lead_customer_id = lead_creation.get("leadCustomerId")
         if not lead_customer_id:
             print(f"   ❌ Keine leadCustomerId erhalten")
-            return False, "Lead konnte nicht erstellt werden. Bitte versuche es erneut.", None
+            return False, BotMessages.BOOKING_LEAD_CREATION_FAILED, None
 
         print(f"   ✅ Lead erstellt mit ID: {lead_customer_id}")
 
@@ -395,13 +396,13 @@ class BookingService:
         if not booking_validation.get("success"):
             error = booking_validation.get("error", "Unbekannter Fehler")
             print(f"   ❌ Slot-Validierung fehlgeschlagen: {error}")
-            return False, "Slot nicht verfügbar – probier ein anderes Datum.", None
+            return False, BotMessages.BOOKING_SLOT_UNAVAILABLE, None
 
         # Check validation status
         validation_status = booking_validation.get("validationStatus")
         if validation_status != "AVAILABLE":
             print(f"   ❌ Slot nicht verfügbar: {validation_status}")
-            return False, "Slot nicht verfügbar – probier ein anderes Datum.", None
+            return False, BotMessages.BOOKING_SLOT_UNAVAILABLE, None
 
         # Step 4: Book appointment with leadCustomerId
         booking = self.book_appointment_for_lead(
@@ -410,11 +411,11 @@ class BookingService:
         if booking.get("success"):
             booking_id = booking.get("bookingId")
             print(f"   ✅ Buchung erfolgreich! Booking-ID: {booking_id}")
-            return True, "Termin gebucht! Bestätigung per E-Mail unterwegs.", booking_id
+            return True, BotMessages.BOOKING_SUCCESS, booking_id
         else:
             error = booking.get("error", "Unbekannter Fehler")
             print(f"   ❌ Buchung fehlgeschlagen: {error}")
-            return False, "Leider nicht verfügbar – wähle ein anderes Datum.", None
+            return False, BotMessages.BOOKING_GENERIC_ERROR, None
 
     def _calculate_end_time(self, start_datetime: str, duration_minutes: int) -> str:
         """

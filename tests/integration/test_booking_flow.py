@@ -2,12 +2,21 @@
 
 import pytest
 import responses
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from constants import build_datetime_iso
 from services.booking_service import BookingService
 from services.customer_service import CustomerService
 from services.extraction_service import ExtractionService
 from utils.text_parser import extract_booking_intent
+
+
+@pytest.fixture
+def future_date():
+    """Get a valid future date (tomorrow) for testing."""
+    tomorrow = datetime.now() + timedelta(days=1)
+    return tomorrow.strftime("%Y-%m-%d")
 
 
 class TestBookingIntentDetection:
@@ -270,26 +279,28 @@ class TestTrialOfferBooking:
 class TestExtractionIntegration:
     """Integration tests for data extraction with booking."""
 
-    def test_extraction_builds_datetime(self):
+    def test_extraction_builds_datetime(self, future_date):
         """Test extraction service builds ISO datetime correctly."""
         mock_llm = MagicMock()
-        mock_llm.generate.return_value = '{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "2025-01-20", "uhrzeit": "14:00"}'
+        mock_llm.generate.return_value = f'{{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
 
         service = ExtractionService(mock_llm)
         result = service.extract_customer_data("Probetraining am 20.01. um 14 Uhr")
 
-        datetime_iso = service.build_datetime_iso(result["datum"], result["uhrzeit"])
-        assert datetime_iso == "2025-01-20T14:00:00+01:00"
+        datetime_iso = build_datetime_iso(result["datum"], result["uhrzeit"])
+        # Timezone will be dynamic (+01:00 or +02:00 depending on DST)
+        assert datetime_iso is not None
+        assert datetime_iso.startswith(f"{future_date}T14:00:00")
 
-    def test_extraction_missing_time_no_datetime(self):
+    def test_extraction_missing_time_no_datetime(self, future_date):
         """Test no datetime built when time is missing."""
         mock_llm = MagicMock()
-        mock_llm.generate.return_value = '{"vorname": null, "nachname": null, "email": null, "datum": "2025-01-20", "uhrzeit": null}'
+        mock_llm.generate.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
 
         service = ExtractionService(mock_llm)
         result = service.extract_customer_data("Probetraining am 20.01.")
 
-        datetime_iso = service.build_datetime_iso(result["datum"], result["uhrzeit"])
+        datetime_iso = build_datetime_iso(result["datum"], result["uhrzeit"])
         assert datetime_iso is None
 
 
@@ -297,7 +308,7 @@ class TestEndToEndScenarios:
     """End-to-end scenario tests."""
 
     @responses.activate
-    def test_new_lead_complete_journey(self, temp_customers_file):
+    def test_new_lead_complete_journey(self, temp_customers_file, future_date):
         """Test complete journey from new lead to booked appointment."""
         base_url = "https://mock-api.magicline.com/v1"
 
@@ -325,7 +336,7 @@ class TestEndToEndScenarios:
         assert customer["name"] == "Max"
 
         # Step 3: Customer provides email and booking request
-        mock_llm.generate.return_value = '{"vorname": null, "nachname": null, "email": "max@test.de", "datum": "2025-01-20", "uhrzeit": "14:00"}'
+        mock_llm.generate.return_value = f'{{"vorname": null, "nachname": null, "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
         extracted = extraction_service.extract_customer_data("Probetraining am 20.01. um 14 Uhr, email max@test.de")
 
         customer_service.update_profil("491234567890", {"email": extracted["email"]})
@@ -339,7 +350,7 @@ class TestEndToEndScenarios:
         customer = customer_service.get("491234567890")
         booking_service = BookingService()
 
-        datetime_iso = extraction_service.build_datetime_iso(extracted["datum"], extracted["uhrzeit"])
+        datetime_iso = build_datetime_iso(extracted["datum"], extracted["uhrzeit"])
         success, message, booking_id = booking_service.try_book_trial_offer(
             first_name=customer["profil"]["vorname"],
             last_name=customer["profil"]["nachname"],

@@ -1,8 +1,10 @@
 """Unit tests for ExtractionService with mocked LLM."""
 
 import pytest
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
+from constants import build_datetime_iso
 from services.extraction_service import ExtractionService
 
 
@@ -18,13 +20,20 @@ def extraction_service(mock_llm):
     return ExtractionService(mock_llm)
 
 
+@pytest.fixture
+def future_date():
+    """Get a valid future date (tomorrow) for testing."""
+    tomorrow = datetime.now() + timedelta(days=1)
+    return tomorrow.strftime("%Y-%m-%d")
+
+
 class TestExtractCustomerData:
     """Tests for extract_customer_data method."""
 
-    def test_extract_full_data(self, extraction_service, mock_llm):
+    def test_extract_full_data(self, extraction_service, mock_llm, future_date):
         """Test extraction of all fields from LLM response."""
-        mock_llm.generate.return_value = '''
-        {"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "2025-01-20", "uhrzeit": "14:00"}
+        mock_llm.generate.return_value = f'''
+        {{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}
         '''
 
         result = extraction_service.extract_customer_data("Test message")
@@ -32,7 +41,7 @@ class TestExtractCustomerData:
         assert result["vorname"] == "Max"
         assert result["nachname"] == "Mustermann"
         assert result["email"] == "max@test.de"
-        assert result["datum"] == "2025-01-20"
+        assert result["datum"] == future_date
         assert result["uhrzeit"] == "14:00"
 
     def test_extract_partial_data(self, extraction_service, mock_llm):
@@ -81,16 +90,16 @@ class TestExtractCustomerData:
         assert result["vorname"] is None
         assert result["nachname"] is None
 
-    def test_extract_filters_null_string_values(self, extraction_service, mock_llm):
+    def test_extract_filters_null_string_values(self, extraction_service, mock_llm, future_date):
         """Test that 'null' and 'none' string values are converted to None."""
-        mock_llm.generate.return_value = '{"vorname": "null", "nachname": "none", "email": "", "datum": "2025-01-20", "uhrzeit": "14:00"}'
+        mock_llm.generate.return_value = f'{{"vorname": "null", "nachname": "none", "email": "", "datum": "{future_date}", "uhrzeit": "14:00"}}'
 
         result = extraction_service.extract_customer_data("Test")
 
         assert result["vorname"] is None
         assert result["nachname"] is None
         assert result["email"] is None
-        assert result["datum"] == "2025-01-20"
+        assert result["datum"] == future_date
 
     def test_extract_calls_llm_with_correct_messages(self, extraction_service, mock_llm):
         """Test LLM is called with correct message structure."""
@@ -114,34 +123,37 @@ class TestExtractCustomerData:
 
 
 class TestBuildDatetimeIso:
-    """Tests for build_datetime_iso method."""
+    """Tests for build_datetime_iso function from constants."""
 
-    def test_build_datetime_iso_success(self, extraction_service):
+    def test_build_datetime_iso_success(self):
         """Test ISO datetime string building."""
-        result = extraction_service.build_datetime_iso("2025-01-20", "14:00")
-        assert result == "2025-01-20T14:00:00+01:00"
+        result = build_datetime_iso("2025-01-20", "14:00")
+        # Timezone will be dynamic (+01:00 or +02:00 depending on DST)
+        assert result is not None
+        assert result.startswith("2025-01-20T14:00:00")
+        assert "+01:00" in result or "+02:00" in result
 
-    def test_build_datetime_iso_missing_date(self, extraction_service):
+    def test_build_datetime_iso_missing_date(self):
         """Test returns None when date missing."""
-        result = extraction_service.build_datetime_iso(None, "14:00")
+        result = build_datetime_iso(None, "14:00")
         assert result is None
 
-    def test_build_datetime_iso_missing_time(self, extraction_service):
+    def test_build_datetime_iso_missing_time(self):
         """Test returns None when time missing."""
-        result = extraction_service.build_datetime_iso("2025-01-20", None)
+        result = build_datetime_iso("2025-01-20", None)
         assert result is None
 
-    def test_build_datetime_iso_both_missing(self, extraction_service):
+    def test_build_datetime_iso_both_missing(self):
         """Test returns None when both missing."""
-        result = extraction_service.build_datetime_iso(None, None)
+        result = build_datetime_iso(None, None)
         assert result is None
 
-    def test_build_datetime_iso_empty_strings(self, extraction_service):
+    def test_build_datetime_iso_empty_strings(self):
         """Test empty strings are treated as falsy."""
-        result = extraction_service.build_datetime_iso("", "14:00")
+        result = build_datetime_iso("", "14:00")
         assert result is None
 
-        result = extraction_service.build_datetime_iso("2025-01-20", "")
+        result = build_datetime_iso("2025-01-20", "")
         assert result is None
 
 

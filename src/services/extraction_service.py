@@ -2,30 +2,42 @@
 """Extraction service for LLM-based data extraction from user messages."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
+
+from constants import validate_email, validate_name, build_datetime_iso
 
 
 class ExtractionService:
     """Extracts structured data from user messages using LLM."""
 
+    # Note: Dynamic values are inserted at runtime
     EXTRACTION_PROMPT = """Extrahiere aus folgendem Text die Kundendaten.
 
-Heute ist {today}.
+WICHTIG - Heute ist {weekday}, der {today}.
+- morgen = {tomorrow}
+- übermorgen = {day_after_tomorrow}
 
 Text: "{text}"
 
-Antworte NUR mit JSON, nichts anderes:
+Antworte NUR mit diesem JSON-Format:
 {{"vorname": "...", "nachname": "...", "email": "...", "datum": "YYYY-MM-DD", "uhrzeit": "HH:MM"}}
 
 Regeln:
-- Bei "Mein Name ist X Y" oder "Ich bin X Y" → vorname=X, nachname=Y
-- Beispiel: "Mein Name ist Michael Makelko" → "vorname": "Michael", "nachname": "Makelko"
-- Beispiel: "Ich bin Anna Schmidt" → "vorname": "Anna", "nachname": "Schmidt"
-- Email = E-Mail-Adresse
-- Datum im Format YYYY-MM-DD (z.B. "30.12" → "2025-12-30")
-- Uhrzeit im Format HH:MM (z.B. "14 Uhr" → "14:00")
-- Setze null NUR wenn die Info wirklich NICHT im Text steht"""
+- vorname/nachname: Bei "Mein Name ist X Y" oder "Ich bin X Y" → vorname=X, nachname=Y
+- vorname: Bei "Ich bin der X" oder "Ich bin die X" → vorname=X (NICHT "der" oder "die")
+- email: Muss @ und . enthalten
+- datum: IMMER im Format YYYY-MM-DD
+  - "morgen" → {tomorrow}
+  - "übermorgen" → {day_after_tomorrow}
+  - "nächsten Montag" → berechne das Datum
+  - "15.1." → {current_year}-01-15 (oder {next_year} wenn in Vergangenheit)
+- uhrzeit: IMMER im Format HH:MM
+  - "15 Uhr" → "15:00"
+  - "halb 3" → "14:30"
+  - "um 10" → "10:00"
+- Setze null wenn die Info NICHT im Text steht
+- NIEMALS 0000-00-00 oder 1970-01-01 verwenden!"""
 
     def __init__(self, llm_model: Any):
         """
@@ -46,8 +58,22 @@ Regeln:
         Returns:
             Dictionary with extracted data, None values for missing fields
         """
-        today = datetime.now().strftime("%d.%m.%Y")
-        prompt = self.EXTRACTION_PROMPT.format(text=text, today=today)
+        now = datetime.now()
+        tomorrow = now + timedelta(days=1)
+        day_after = now + timedelta(days=2)
+
+        # German weekday names
+        weekdays_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+        prompt = self.EXTRACTION_PROMPT.format(
+            text=text,
+            weekday=weekdays_de[now.weekday()],
+            today=now.strftime("%d.%m.%Y"),
+            tomorrow=tomorrow.strftime("%Y-%m-%d"),
+            day_after_tomorrow=day_after.strftime("%Y-%m-%d"),
+            current_year=now.year,
+            next_year=now.year + 1,
+        )
 
         messages = [
             {"role": "system", "content": "Du bist ein Daten-Extraktions-Assistent. Antworte nur mit JSON."},
@@ -59,13 +85,74 @@ Regeln:
             print(f"🔍 EXTRACTION RAW: {raw_response[:200]}...")
 
             extracted = self._parse_extraction_response(raw_response)
-            print(f"🔍 EXTRACTION PARSED: {extracted}")
+
+            # Validate extracted data
+            extracted = self._validate_extracted_data(extracted)
+
+            print(f"🔍 EXTRACTION PARSED & VALIDATED: {extracted}")
 
             return extracted
 
         except Exception as e:
             print(f"❌ Extraction error: {e}")
             return {"vorname": None, "nachname": None, "email": None, "datum": None, "uhrzeit": None}
+
+    def _validate_extracted_data(self, data: dict[str, Optional[str]]) -> dict[str, Optional[str]]:
+        """
+        Validate extracted data and set invalid values to None.
+
+        Args:
+            data: Extracted data dictionary
+
+        Returns:
+            Validated data dictionary
+        """
+        # Validate email
+        if data.get("email") and not validate_email(data["email"]):
+            print(f"⚠️ Invalid email format: {data['email']}")
+            data["email"] = None
+
+        # Validate vorname
+        if data.get("vorname") and not validate_name(data["vorname"]):
+            print(f"⚠️ Invalid vorname: {data['vorname']}")
+            data["vorname"] = None
+
+        # Validate nachname
+        if data.get("nachname") and not validate_name(data["nachname"]):
+            print(f"⚠️ Invalid nachname: {data['nachname']}")
+            data["nachname"] = None
+
+        # Validate date format and reasonableness
+        if data.get("datum"):
+            try:
+                parsed_date = datetime.strptime(data["datum"], "%Y-%m-%d")
+                now = datetime.now()
+
+                # Reject placeholder dates (before 2020)
+                if parsed_date.year < 2020:
+                    print(f"⚠️ Placeholder date rejected: {data['datum']}")
+                    data["datum"] = None
+                # Reject dates more than 1 year in the future
+                elif parsed_date > now + timedelta(days=365):
+                    print(f"⚠️ Date too far in future: {data['datum']}")
+                    data["datum"] = None
+                # Reject dates more than 7 days in the past
+                elif parsed_date < now - timedelta(days=7):
+                    print(f"⚠️ Date too far in past: {data['datum']}")
+                    data["datum"] = None
+            except ValueError:
+                print(f"⚠️ Invalid date format: {data['datum']}")
+                data["datum"] = None
+
+        # Validate time format (HH:MM)
+        if data.get("uhrzeit"):
+            try:
+                datetime.strptime(data["uhrzeit"], "%H:%M")
+            except ValueError:
+                print(f"⚠️ Invalid time format: {data['uhrzeit']}")
+                data["uhrzeit"] = None
+
+        return data
 
     def _parse_extraction_response(self, response: str) -> dict[str, Optional[str]]:
         """
@@ -98,18 +185,3 @@ Regeln:
             print(f"⚠️ JSON parse error: {e}")
 
         return result
-
-    def build_datetime_iso(self, datum: Optional[str], uhrzeit: Optional[str]) -> Optional[str]:
-        """
-        Build ISO 8601 datetime string from extracted date and time.
-
-        Args:
-            datum: Date in YYYY-MM-DD format
-            uhrzeit: Time in HH:MM format
-
-        Returns:
-            ISO 8601 datetime string or None if incomplete
-        """
-        if datum and uhrzeit:
-            return f"{datum}T{uhrzeit}:00+01:00"
-        return None

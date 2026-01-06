@@ -119,7 +119,6 @@ class TestWebhookPost:
 class TestWebhookMessageProcessing:
     """Tests for webhook message processing logic."""
 
-    @patch("api.routes.processed_message_ids", set())
     @patch("api.routes.send_whatsapp_message")
     @patch("api.routes.customer_service")
     @patch("api.routes.chat_service")
@@ -128,6 +127,10 @@ class TestWebhookMessageProcessing:
         self, mock_extraction, mock_chat, mock_customer, mock_send, client
     ):
         """Test webhook processes incoming text message."""
+        # Clear message tracker before test
+        from constants import message_tracker
+        message_tracker.clear()
+
         # Set up mocks
         mock_customer.get.return_value = {
             "name": "du",
@@ -152,7 +155,6 @@ class TestWebhookMessageProcessing:
 
         assert response.status_code == 200
 
-    @patch("api.routes.processed_message_ids", set())
     @patch("api.routes.send_whatsapp_message")
     @patch("api.routes.customer_service")
     @patch("api.routes.chat_service")
@@ -161,6 +163,10 @@ class TestWebhookMessageProcessing:
         self, mock_extraction, mock_chat, mock_customer, mock_send, client
     ):
         """Test webhook extracts and saves customer name."""
+        # Clear message tracker before test
+        from constants import message_tracker
+        message_tracker.clear()
+
         mock_customer.get.return_value = {
             "name": "du",
             "status": "neuer Interessent",
@@ -190,7 +196,6 @@ class TestWebhookMessageProcessing:
 class TestDuplicateMessageHandling:
     """Tests for duplicate message prevention."""
 
-    @patch("api.routes.processed_message_ids", set())
     @patch("api.routes.send_whatsapp_message")
     @patch("api.routes.customer_service")
     @patch("api.routes.chat_service")
@@ -199,6 +204,10 @@ class TestDuplicateMessageHandling:
         self, mock_extraction, mock_chat, mock_customer, mock_send, client
     ):
         """Test first message is processed normally."""
+        # Clear message tracker before test
+        from constants import message_tracker
+        message_tracker.clear()
+
         mock_customer.get.return_value = {
             "name": "du", "status": "neuer Interessent",
             "profil": {"magicline_customer_id": None}, "history": [],
