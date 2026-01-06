@@ -117,6 +117,15 @@ def _handle_text_message(phone: str, text: str) -> None:
         # Names: LLM often misses or misspells names
         if not extracted_data.get("vorname") or not extracted_data.get("nachname"):
             regex_vorname, regex_nachname = extract_full_name(text)
+
+            # Special case: If regex found ONLY nachname (e.g., "Mein Nachname ist X")
+            # and LLM incorrectly extracted "Mein" as vorname, clear the wrong vorname
+            if regex_nachname and not regex_vorname:
+                llm_vorname = extracted_data.get("vorname", "").lower()
+                if llm_vorname in {"mein", "dein", "sein", "ihr"}:
+                    print(f"⚠️ LLM-Vorname '{llm_vorname}' war falsch (aus 'Mein Nachname ist...') - gelöscht")
+                    extracted_data["vorname"] = None
+
             if regex_vorname and not extracted_data.get("vorname"):
                 extracted_data["vorname"] = regex_vorname
                 print(f"📝 Vorname (Regex): {regex_vorname}")
@@ -130,6 +139,20 @@ def _handle_text_message(phone: str, text: str) -> None:
             if regex_email:
                 extracted_data["email"] = regex_email
                 print(f"📝 Email (Regex): {regex_email}")
+
+        # === DATE/TIME EXTRACTION ===
+        # IMPORTANT: Always extract and store date/time, even without booking intent!
+        # This ensures we don't lose data when user provides info across multiple messages
+        regex_date = extract_date_only(text)
+        regex_time = extract_time_only(text)
+
+        if regex_date and not extracted_data.get("datum"):
+            extracted_data["datum"] = regex_date
+            print(f"📝 Datum (Regex): {regex_date}")
+
+        if regex_time and not extracted_data.get("uhrzeit"):
+            extracted_data["uhrzeit"] = regex_time
+            print(f"📝 Uhrzeit (Regex): {regex_time}")
 
         # Update profile with extracted data
         if any(v for v in extracted_data.values() if v):

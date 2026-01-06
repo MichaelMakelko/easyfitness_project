@@ -40,6 +40,8 @@ def extract_full_name(text: str) -> tuple[Optional[str], Optional[str]]:
     Supports various formats:
     - "Ich heiße Max Mustermann"
     - "Mein Name ist Anna Schmidt"
+    - "Mein Nachname ist Schmidt" (only last name)
+    - "Mein Vorname ist Max" (only first name)
     - "Max Mustermann, max@email.de" (name before comma+email)
     - "Vorname Nachname" (two capitalized words at start)
 
@@ -49,8 +51,23 @@ def extract_full_name(text: str) -> tuple[Optional[str], Optional[str]]:
     Returns:
         Tuple of (vorname, nachname), either can be None
     """
-    # Pattern 1: Traditional triggers with two names
     lower = text.lower()
+
+    # Pattern 0: Explicit "Nachname ist X" or "Vorname ist X" (single name extraction)
+    # This MUST come first to avoid "Mein" being extracted as vorname
+    nachname_match = re.search(r'(?:mein\s+)?nachname\s+(?:ist\s+)?(\w+)', lower)
+    if nachname_match:
+        nachname = nachname_match.group(1)
+        if _is_valid_name(nachname):
+            return None, nachname.capitalize()
+
+    vorname_match = re.search(r'(?:mein\s+)?vorname\s+(?:ist\s+)?(\w+)', lower)
+    if vorname_match:
+        vorname = vorname_match.group(1)
+        if _is_valid_name(vorname):
+            return vorname.capitalize(), None
+
+    # Pattern 1: Traditional triggers with two names
     triggers = [
         ("ich heiße ", 2),
         ("ich heisse ", 2),
@@ -197,6 +214,7 @@ def extract_date_only(text: str) -> Optional[str]:
     - DD.MM. (e.g., "25.12.")
     - DD.MM (e.g., "9.1" or "am 9.1") - common German short format
     - "am DD.MM" context (e.g., "am 9.1 kommen")
+    - "morgen" / "übermorgen" - relative dates
 
     Args:
         text: Text to parse
@@ -205,6 +223,17 @@ def extract_date_only(text: str) -> Optional[str]:
         Date string in YYYY-MM-DD format or None
     """
     now = datetime.now()
+    lower = text.lower()
+
+    # Check for relative date expressions FIRST (most reliable)
+    if re.search(r'\bmorgen\b', lower) and not re.search(r'\bübermorgen\b', lower):
+        # "morgen" but NOT "übermorgen"
+        tomorrow = now + timedelta(days=1)
+        return tomorrow.strftime("%Y-%m-%d")
+
+    if re.search(r'\bübermorgen\b', lower):
+        day_after = now + timedelta(days=2)
+        return day_after.strftime("%Y-%m-%d")
 
     # Try full date DD.MM.YYYY
     date_match = re.search(r'(\d{1,2})\.(\d{1,2})\.(\d{4})', text)

@@ -129,10 +129,25 @@ class TestExtractDateOnly:
 
     def test_extract_date_none(self):
         """Test that None is returned when no date found."""
-        assert extract_date_only("Termin morgen") is None
+        # Note: "morgen" and "übermorgen" are now recognized!
         assert extract_date_only("Naechsten Montag") is None
         assert extract_date_only("Hallo wie geht es") is None
         assert extract_date_only("") is None
+
+    @freeze_time("2026-01-06")
+    def test_extract_date_morgen(self):
+        """Test 'morgen' is recognized and returns tomorrow's date."""
+        assert extract_date_only("Termin morgen") == "2026-01-07"
+        assert extract_date_only("Morgen um 10 Uhr") == "2026-01-07"
+        assert extract_date_only("morgen passt gut") == "2026-01-07"
+        # "übermorgen" should NOT match as "morgen"
+        assert extract_date_only("übermorgen") == "2026-01-08"
+
+    @freeze_time("2026-01-06")
+    def test_extract_date_uebermorgen(self):
+        """Test 'übermorgen' is recognized and returns day after tomorrow."""
+        assert extract_date_only("Termin übermorgen") == "2026-01-08"
+        assert extract_date_only("übermorgen um 14 Uhr") == "2026-01-08"
 
     @freeze_time("2025-01-15")
     def test_extract_date_single_digit_day_month(self):
@@ -307,6 +322,30 @@ class TestExtractFullName:
         """Test extraction when only first name before email."""
         vorname, nachname = extract_full_name("Max, max@test.de")
         assert vorname == "Max"
+        assert nachname is None
+
+    def test_extract_full_name_nachname_only(self):
+        """Test extraction of only last name from 'Mein Nachname ist X'."""
+        vorname, nachname = extract_full_name("Mein Nachname ist Mueller")
+        assert vorname is None
+        assert nachname == "Mueller"
+
+        vorname, nachname = extract_full_name("mein nachname ist Schmidt")
+        assert vorname is None
+        assert nachname == "Schmidt"
+
+        vorname, nachname = extract_full_name("Nachname ist Weber")
+        assert vorname is None
+        assert nachname == "Weber"
+
+    def test_extract_full_name_vorname_only(self):
+        """Test extraction of only first name from 'Mein Vorname ist X'."""
+        vorname, nachname = extract_full_name("Mein Vorname ist Max")
+        assert vorname == "Max"
+        assert nachname is None
+
+        vorname, nachname = extract_full_name("vorname ist Anna")
+        assert vorname == "Anna"
         assert nachname is None
 
     def test_extract_full_name_rejects_sentence_starts(self):
