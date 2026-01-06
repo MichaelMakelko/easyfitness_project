@@ -196,6 +196,25 @@ class TestExtractTimeOnly:
         assert extract_time_only("9:30") == "09:30"
         assert extract_time_only("8 uhr") == "08:00"
 
+    def test_extract_time_validates_hour_range(self):
+        """Test that invalid hours (outside 0-23) are rejected."""
+        assert extract_time_only("25:00") is None
+        assert extract_time_only("24:00") is None
+        assert extract_time_only("99 Uhr") is None
+        assert extract_time_only("30 uhr") is None
+        # Edge cases: 0 and 23 should work
+        assert extract_time_only("0:00") == "00:00"
+        assert extract_time_only("23:59") == "23:59"
+
+    def test_extract_time_validates_minute_range(self):
+        """Test that invalid minutes (outside 0-59) are rejected."""
+        assert extract_time_only("10:99") is None
+        assert extract_time_only("10:60") is None
+        assert extract_time_only("14:75") is None
+        # Edge cases: 0 and 59 should work
+        assert extract_time_only("10:00") == "10:00"
+        assert extract_time_only("10:59") == "10:59"
+
 
 class TestExtractDateTime:
     """Tests for extract_date_time function."""

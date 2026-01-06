@@ -271,8 +271,8 @@ def extract_time_only(text: str) -> Optional[str]:
     Extract only time from text.
 
     Supports:
-    - HH:MM
-    - "X Uhr" format
+    - HH:MM (validates 0-23 hours, 0-59 minutes)
+    - "X Uhr" format (validates 0-23 hours)
 
     Args:
         text: Text to parse
@@ -283,14 +283,22 @@ def extract_time_only(text: str) -> Optional[str]:
     # Try HH:MM format
     time_match = re.search(r'(\d{1,2}):(\d{2})', text)
     if time_match:
-        hour, minute = time_match.groups()
-        return f"{hour.zfill(2)}:{minute}"
+        hour_str, minute_str = time_match.groups()
+        hour = int(hour_str)
+        minute = int(minute_str)
+        # Validate hour (0-23) and minute (0-59)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour_str.zfill(2)}:{minute_str}"
+        # Invalid time, continue to next pattern or return None
 
     # Try "X Uhr" format
     uhr_match = re.search(r'(\d{1,2})\s*uhr', text.lower())
     if uhr_match:
-        hour = uhr_match.group(1)
-        return f"{hour.zfill(2)}:00"
+        hour_str = uhr_match.group(1)
+        hour = int(hour_str)
+        # Validate hour (0-23)
+        if 0 <= hour <= 23:
+            return f"{hour_str.zfill(2)}:00"
 
     return None
 
