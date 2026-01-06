@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from config import PROMPTS_DIR
+from constants import BotMessages
 
 # German weekday names
 WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -44,12 +45,12 @@ class ChatService:
         Returns:
             Formatted system prompt
         """
-        name = customer["name"] if customer["name"] != "du" else "noch unbekannt"
+        name = customer["name"] if customer["name"] != BotMessages.DEFAULT_NAME else BotMessages.NAME_UNKNOWN
         profil = customer.get("profil", {})
 
         # Filter out None values for cleaner display
         profil_filled = {k: v for k, v in profil.items() if v is not None}
-        profil_str = json.dumps(profil_filled, ensure_ascii=False) if profil_filled else "keine Daten"
+        profil_str = json.dumps(profil_filled, ensure_ascii=False) if profil_filled else BotMessages.NO_PROFILE_DATA
 
         # Get current date info
         heute = datetime.now()
@@ -110,6 +111,7 @@ class ChatService:
         Parse JSON response from LLM.
 
         Extracts reply text and profile data from structured response.
+        Handles both proper JSON (double quotes) and Python dict syntax (single quotes).
 
         Args:
             response: Raw LLM response string
@@ -117,25 +119,61 @@ class ChatService:
         Returns:
             Tuple of (reply_text, profil_dict)
         """
+        # Find dict/JSON in response
+        start = response.find("{")
+        end = response.rfind("}") + 1
+
+        if start == -1 or end <= start:
+            # No JSON-like structure found
+            print(f"⚠️ No JSON structure in response: {response[:100]}...")
+            return response, {}
+
+        json_str = response[start:end]
+
+        # Try 1: Standard JSON parsing
         try:
-            # Find JSON in response
-            start = response.find("{")
-            end = response.rfind("}") + 1
-
-            if start != -1 and end > start:
-                json_str = response[start:end]
-                data = json.loads(json_str)
-
-                reply = data.get("reply", response)
-                profil = data.get("profil", {})
-
-                # Filter out null values
-                profil = {k: v for k, v in profil.items() if v is not None}
-
-                return reply, profil
-
+            data = json.loads(json_str)
+            return self._extract_reply_profil(data, response)
         except json.JSONDecodeError:
             pass
 
-        # Fallback: return raw response if parsing fails
+        # Try 2: Python dict syntax (single quotes) - convert to JSON
+        try:
+            # Replace single quotes with double quotes carefully
+            # Handle None -> null, True -> true, False -> false
+            fixed_str = json_str.replace("'", '"')
+            fixed_str = fixed_str.replace("None", "null")
+            fixed_str = fixed_str.replace("True", "true")
+            fixed_str = fixed_str.replace("False", "false")
+            data = json.loads(fixed_str)
+            print("⚠️ LLM returned Python dict syntax instead of JSON - converted successfully")
+            return self._extract_reply_profil(data, response)
+        except json.JSONDecodeError:
+            pass
+
+        # Try 3: Use ast.literal_eval for Python literals
+        try:
+            import ast
+            data = ast.literal_eval(json_str)
+            if isinstance(data, dict):
+                print("⚠️ LLM returned Python dict - parsed with ast.literal_eval")
+                return self._extract_reply_profil(data, response)
+        except (ValueError, SyntaxError):
+            pass
+
+        # All parsing failed - log and return raw
+        print(f"❌ Failed to parse LLM response: {json_str[:200]}...")
         return response, {}
+
+    def _extract_reply_profil(self, data: dict, fallback: str) -> tuple[str, dict[str, Any]]:
+        """Extract reply and profil from parsed data dict."""
+        reply = data.get("reply", fallback)
+        profil = data.get("profil", {})
+
+        # Filter out null/None values
+        if isinstance(profil, dict):
+            profil = {k: v for k, v in profil.items() if v is not None}
+        else:
+            profil = {}
+
+        return reply, profil

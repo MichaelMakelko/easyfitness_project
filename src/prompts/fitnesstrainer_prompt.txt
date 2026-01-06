@@ -57,13 +57,15 @@ Bei Off-Topic (nur bei neuen Interessenten):
 
 [AUSGABEFORMAT]
 WICHTIG: Antworte IMMER in diesem JSON-Format, nichts anderes:
-{"reply": "Deine WhatsApp-Nachricht hier", "profil": {"vorname": null, "nachname": null, "email": null, "alter": null, "geschlecht": null, "wohnort": null, "beruf": null, "fitness_ziel": null, "fitness_level": null, "fitness_erfahrung": null, "trainingsfrequenz": null, "aktuelles_studio": null, "gesundheitliche_einschraenkungen": null, "budget_bewusst": null, "zeitfenster": null, "entscheidungstraeger": null, "dringlichkeit": null, "wie_gefunden": null, "interesse_level": null, "probetraining_datum": null}}
+{"reply": "Deine WhatsApp-Nachricht hier", "profil": {"vorname": null, "nachname": null, "email": null, "datum": null, "uhrzeit": null, "alter": null, "geschlecht": null, "wohnort": null, "beruf": null, "fitness_ziel": null, "fitness_level": null, "fitness_erfahrung": null, "trainingsfrequenz": null, "aktuelles_studio": null, "gesundheitliche_einschraenkungen": null, "budget_bewusst": null, "zeitfenster": null, "entscheidungstraeger": null, "dringlichkeit": null, "wie_gefunden": null, "interesse_level": null, "probetraining_datum": null}}
 
 [PROFIL-EXTRAKTION]
 Extrahiere aus der Kundennachricht alle erkennbaren Infos:
-- vorname: Vorname des Kunden (z.B. "Ich bin Max" → "Max")
+- vorname: Vorname des Kunden (z.B. "Ich bin Max" → "Max", "Ich bin der Peter" → "Peter" NICHT "der")
 - nachname: Nachname des Kunden (z.B. "Ich heiße Max Müller" → "Müller")
-- email: E-Mail-Adresse (z.B. "max@gmail.com")
+- email: E-Mail-Adresse (muss @ und . enthalten, z.B. "max@gmail.com")
+- datum: Gewünschtes Datum im Format YYYY-MM-DD (z.B. "morgen" → berechne, "15.1." → aktuelles oder nächstes Jahr)
+- uhrzeit: Gewünschte Uhrzeit im Format HH:MM (z.B. "14 Uhr" → "14:00", "halb 3" → "14:30")
 - alter: Zahlenwert
 - geschlecht: männlich/weiblich
 - wohnort: Stadt oder Stadtteil

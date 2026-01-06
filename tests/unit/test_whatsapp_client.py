@@ -79,6 +79,10 @@ class TestSendMessage:
         whatsapp_client.send_message("491234567890", "Hello!")
 
         request_body = responses.calls[0].request.body
+        # Ensure body is bytes for comparison
+        if isinstance(request_body, str):
+            request_body = request_body.encode()
+        assert request_body is not None
         assert b'"messaging_product": "whatsapp"' in request_body
         assert b'"to": "491234567890"' in request_body
         assert b'"type": "text"' in request_body
@@ -129,6 +133,10 @@ class TestSendTemplateMessage:
         whatsapp_client.send_template_message("+491234567890", "test_template")
 
         request_body = responses.calls[0].request.body
+        # Ensure body is bytes for comparison
+        if isinstance(request_body, str):
+            request_body = request_body.encode()
+        assert request_body is not None
         assert b"+49" not in request_body
         assert b'"to": "491234567890"' in request_body
 
@@ -145,6 +153,10 @@ class TestSendTemplateMessage:
         whatsapp_client.send_template_message("491234567890", "my_template", "de_DE")
 
         request_body = responses.calls[0].request.body
+        # Ensure body is bytes for comparison
+        if isinstance(request_body, str):
+            request_body = request_body.encode()
+        assert request_body is not None
         assert b'"type": "template"' in request_body
         assert b'"name": "my_template"' in request_body
 
@@ -193,6 +205,10 @@ class TestSendOutboundMessage:
         whatsapp_client.send_outbound_message("+491234567890", "Hello!")
 
         request_body = responses.calls[0].request.body
+        # Ensure body is bytes for comparison
+        if isinstance(request_body, str):
+            request_body = request_body.encode()
+        assert request_body is not None
         assert b'"to": "491234567890"' in request_body
 
     @responses.activate

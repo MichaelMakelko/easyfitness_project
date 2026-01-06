@@ -7,12 +7,23 @@ from flask import Blueprint, jsonify, request
 
 from api.whatsapp_client import send_whatsapp_message
 from config import VERIFY_TOKEN
+from constants import (
+    BotMessages,
+    CustomerStatus,
+    build_datetime_iso,
+    format_date_german,
+    message_tracker,
+)
 from model.llama_model import LlamaBot
 from services.booking_service import BookingService
 from services.chat_service import ChatService
 from services.customer_service import CustomerService
 from services.extraction_service import ExtractionService
-from utils.text_parser import extract_booking_intent
+from utils.text_parser import (
+    extract_booking_intent,
+    extract_date_only,
+    extract_time_only,
+)
 
 # Initialize services
 webhook_bp = Blueprint("webhook", __name__)
@@ -21,9 +32,6 @@ customer_service = CustomerService()
 chat_service = ChatService(llm)
 booking_service = BookingService()
 extraction_service = ExtractionService(llm)
-
-# Track processed message IDs to avoid duplicates (WhatsApp retries)
-processed_message_ids: set[str] = set()
 
 
 @webhook_bp.route("/webhook", methods=["GET"])
@@ -36,7 +44,7 @@ def verify() -> tuple[str, int]:
     """
     if request.args.get("hub.verify_token") == VERIFY_TOKEN:
         return request.args.get("hub.challenge") or "", 200
-    return "Falscher Token", 403
+    return BotMessages.WRONG_TOKEN, 403
 
 
 @webhook_bp.route("/webhook", methods=["POST"])
@@ -66,24 +74,20 @@ def _process_change(change: dict[str, Any]) -> None:
     messages_list = value.get("messages", [])
 
     for msg in messages_list:
-        # Skip duplicate messages (WhatsApp retries)
         msg_id = msg.get("id")
-        if msg_id in processed_message_ids:
+
+        # Skip duplicate messages using LRU-based tracker
+        if message_tracker.is_duplicate(msg_id):
             print(f"⏭️ Duplikat ignoriert: {msg_id}")
             continue
 
-        # Mark as processed
-        processed_message_ids.add(msg_id)
-
-        # Keep set size manageable (max 1000 entries)
-        if len(processed_message_ids) > 1000:
-            processed_message_ids.clear()
-
         if msg.get("type") == "text":
-            _handle_text_message(
-                phone=msg["from"],
-                text=msg["text"]["body"],
-            )
+            phone = msg.get("from")
+            text_body = msg.get("text", {}).get("body")
+            if phone and text_body:
+                _handle_text_message(phone=phone, text=text_body)
+            else:
+                print(f"⚠️ Message missing required fields: from={phone}, text={text_body}")
 
 
 def _handle_text_message(phone: str, text: str) -> None:
@@ -99,6 +103,9 @@ def _handle_text_message(phone: str, text: str) -> None:
         print(f"📥 Verarbeite Nachricht von {phone}: {text}")
         customer = customer_service.get(phone)
         history = customer_service.get_history(phone, limit=12)
+
+        # Store original name to detect if we need status update later
+        original_name = customer["name"]
 
         # Extract customer data from user message (LLM-based extraction)
         print("🔍 Extrahiere Kundendaten...")
@@ -121,10 +128,11 @@ def _handle_text_message(phone: str, text: str) -> None:
             customer_service.update_profil(phone, extracted_profil)
             print(f"📝 Profil (LLM) aktualisiert: {extracted_profil}")
 
-        # Update status if name was extracted (from extraction service or LLM)
+        # Update status if name was extracted and customer was previously unknown
+        # Use original_name to avoid race condition after profile update
         vorname_found = extracted_data.get("vorname") or extracted_profil.get("vorname")
-        if vorname_found and customer["name"] == "du":
-            customer_service.update_status(phone, "Name bekannt")
+        if vorname_found and original_name == BotMessages.DEFAULT_NAME:
+            customer_service.update_status(phone, CustomerStatus.NAME_KNOWN)
 
         # Refresh customer data before booking check to get latest profile
         customer = customer_service.get(phone)
@@ -167,26 +175,68 @@ def _handle_booking_if_needed(
     Returns:
         Updated reply with booking status
     """
-    booking_intent = extract_booking_intent(text, reply)
-    print(f"📅 Buchungs-Intent erkannt: {booking_intent}")
+    # Build customer context for booking intent detection
+    profil = customer.get("profil", {})
+    has_booking_data = bool(
+        profil.get("vorname") and
+        profil.get("nachname") and
+        profil.get("email")
+    )
+    has_partial_datetime = bool(profil.get("datum") or profil.get("uhrzeit"))
+
+    customer_context = {
+        "has_booking_data": has_booking_data,
+        "has_partial_datetime": has_partial_datetime,
+    }
+
+    booking_intent = extract_booking_intent(text, reply, customer_context)
+    print(f"📅 Buchungs-Intent erkannt: {booking_intent} (Kontext: {customer_context})")
 
     if not booking_intent:
         return reply
 
-    # Use LLM-extracted date/time
+    # === HYBRID EXTRACTION: LLM + Regex Fallback ===
+    # Try LLM extraction first
     extracted_date = extracted_data.get("datum")
     extracted_time = extracted_data.get("uhrzeit")
 
-    print(f"📅 Extrahiertes Datum (LLM): {extracted_date}")
-    print(f"📅 Extrahierte Uhrzeit (LLM): {extracted_time}")
+    # Regex fallback if LLM failed
+    date_from_regex = False
+    if not extracted_date:
+        extracted_date = extract_date_only(text)
+        if extracted_date:
+            print(f"📅 Datum (Regex-Fallback): {extracted_date}")
+            date_from_regex = True
+
+    if not extracted_time:
+        extracted_time = extract_time_only(text)
+        if extracted_time:
+            print(f"📅 Uhrzeit (Regex-Fallback): {extracted_time}")
+
+    print(f"📅 Extrahiertes Datum: {extracted_date}")
+    print(f"📅 Extrahierte Uhrzeit: {extracted_time}")
+
+    # === CONTEXT: Use stored values from profile if missing ===
+    profil = customer.get("profil", {})
+
+    # If we have time but no date, check if there's a stored date
+    if extracted_time and not extracted_date:
+        stored_date = profil.get("datum")
+        if stored_date:
+            extracted_date = stored_date
+            print(f"📅 Verwende gespeichertes Datum: {extracted_date}")
 
     # If we have date but no time, ask for time
     if extracted_date and not extracted_time:
+        # Only save if we got a new date (avoid redundant saves)
+        if date_from_regex or extracted_data.get("datum"):
+            customer_service.update_profil(phone, {"datum": extracted_date})
         print("⚠️ Datum vorhanden aber keine Uhrzeit - frage nach Uhrzeit")
-        return f"Um welche Uhrzeit möchtest du am {_format_date_german(extracted_date)} vorbeikommen? 🕐"
+        date_german = format_date_german(extracted_date)
+        return BotMessages.missing_time(date_german)
 
-    # Build full datetime from LLM extraction
-    start_date_time = extraction_service.build_datetime_iso(extracted_date, extracted_time)
+    # Build full datetime
+    start_date_time = build_datetime_iso(extracted_date, extracted_time)
 
     print(f"📅 Vollständiges Datum/Zeit: {start_date_time}")
 
@@ -210,7 +260,9 @@ def _handle_booking_if_needed(
         print("📅 Neuer Lead - verwende Trial Offer Flow")
 
         # Get required data for trial offer booking
-        vorname = profil.get("vorname") or (customer.get("name") if customer.get("name") != "du" else None)
+        vorname = profil.get("vorname") or (
+            customer.get("name") if customer.get("name") != BotMessages.DEFAULT_NAME else None
+        )
         nachname = profil.get("nachname")
         email = profil.get("email")
 
@@ -224,10 +276,9 @@ def _handle_booking_if_needed(
             missing_fields.append("E-Mail-Adresse")
 
         if missing_fields:
-            missing_str = ", ".join(missing_fields)
-            print(f"⚠️ Fehlende Daten für Trial Offer: {missing_str}")
+            print(f"⚠️ Fehlende Daten für Trial Offer: {', '.join(missing_fields)}")
             # Don't use LLM reply - it might say "ich buche dich ein" which is misleading
-            return f"Um deinen Termin zu buchen, brauche ich noch: {missing_str}. Kannst du mir diese Infos geben? 📝"
+            return BotMessages.missing_booking_data(missing_fields)
 
         print(f"📅 Trial Offer Buchung: {vorname} {nachname} ({email})")
         success, message, booking_id = booking_service.try_book_trial_offer(
@@ -240,27 +291,20 @@ def _handle_booking_if_needed(
     print(f"📅 Buchungsergebnis: success={success}, message={message}, booking_id={booking_id}")
 
     if success:
-        customer["last_booking_id"] = booking_id
-        customer_service.update_status(phone, "Probetraining gebucht")
+        # Determine booking type
+        booking_type = "regular" if magicline_customer_id else "trial_offer"
+
+        # Store complete booking record
+        customer_service.add_booking(
+            phone=phone,
+            booking_id=booking_id,
+            appointment_datetime=start_date_time,
+            booking_type=booking_type,
+        )
+        customer_service.update_status(phone, CustomerStatus.TRIAL_BOOKED)
+        print(f"📅 Buchung gespeichert: {booking_id} für {start_date_time}")
         # Use only system message to avoid redundancy
         return f"✅ {message}"
     else:
         # Don't use LLM reply - it might say "ich buche dich ein" which contradicts the error
         return f"❌ {message}"
-
-
-def _format_date_german(date_str: str) -> str:
-    """
-    Format YYYY-MM-DD to German DD.MM.YYYY format.
-
-    Args:
-        date_str: Date in YYYY-MM-DD format
-
-    Returns:
-        Date in DD.MM.YYYY format
-    """
-    try:
-        year, month, day = date_str.split("-")
-        return f"{day}.{month}.{year}"
-    except ValueError:
-        return date_str

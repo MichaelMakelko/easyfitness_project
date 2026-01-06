@@ -35,7 +35,17 @@ class LlamaBot:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, local_files_only=True
         )
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Configure pad token - Llama 3.1 has a dedicated pad token
+        # If not available, use eos_token but suppress the warning
+        if self.tokenizer.pad_token is None:
+            # Try to use a dedicated pad token if available in vocab
+            if "<|finetune_right_pad_id|>" in self.tokenizer.get_vocab():
+                self.tokenizer.pad_token = "<|finetune_right_pad_id|>"
+            else:
+                # Fallback: use eos_token (common for Llama models)
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+
         self.tokenizer.padding_side = "left"
 
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -50,12 +60,19 @@ class LlamaBot:
 
         print("Max ist wach und fit!")
 
-    def generate(self, messages: list[dict[str, str]]) -> str:
+    def generate(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.8,
+        max_new_tokens: int = 300,
+    ) -> str:
         """
         Generate response from chat messages.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
+            temperature: Sampling temperature (0.1 for extraction, 0.8 for chat)
+            max_new_tokens: Maximum tokens to generate
 
         Returns:
             Generated response text
@@ -77,17 +94,36 @@ class LlamaBot:
             input_ids = tokenized.to("cuda")
             attention_mask = None
 
+        # Use do_sample=False for very low temperatures (deterministic/greedy decoding)
+        # Threshold 0.1: temperatures <= 0.1 use greedy decoding for consistent output
+        # This is used by generate_extraction() for reliable JSON extraction
+        do_sample = temperature > 0.1
+
         with torch.no_grad():
             output = self.model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=300,
-                temperature=0.8,
-                top_p=0.9,
-                do_sample=True,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature if do_sample else None,
+                top_p=0.9 if do_sample else None,
+                do_sample=do_sample,
                 repetition_penalty=1.2,
-                pad_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
 
         reply = self.tokenizer.decode(output[0], skip_special_tokens=True)
         return reply.split("assistant")[-1].strip()
+
+    def generate_extraction(self, messages: list[dict[str, str]]) -> str:
+        """
+        Generate response optimized for data extraction (deterministic).
+
+        Uses low temperature for consistent, predictable JSON output.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+
+        Returns:
+            Generated response text (should be JSON)
+        """
+        return self.generate(messages, temperature=0.1, max_new_tokens=200)

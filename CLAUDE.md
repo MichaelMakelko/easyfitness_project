@@ -138,3 +138,175 @@ The system prompt includes current date (`{{WOCHENTAG}}`, `{{DATUM}}`), injected
 - **JSON file persistence**: No database - all data in `data/customers.json`
 - **Persona requirement**: LLM must never reveal it's an AI - always acts as "Max"
 - **Response format**: LLM outputs JSON with `reply` (message text) and `profil` (extracted customer data)
+
+---
+
+## Session Notes (2026-01-05) - Major Bug Fixes
+
+### Overview
+Fixed critical bugs preventing the booking flow from working correctly. The main issues were:
+1. LLM extraction unreliable (wrong dates, missing time, invalid JSON)
+2. Booking intent not detected when user split data across messages
+3. Data persistence bugs
+4. Response parsing failures when LLM returned Python dict syntax
+
+### All Files Modified
+
+#### 1. `src/constants.py` (NEW FILE)
+**Created centralized constants module with:**
+- `CustomerStatus` class - status constants ("neuer Interessent", "Name bekannt", etc.)
+- `BotMessages` class - all hardcoded German response strings
+- `ProcessedMessageTracker` - thread-safe LRU-based duplicate message detection
+- `validate_email()`, `validate_name()` - validation functions
+- `get_timezone_offset()` - dynamic CET/CEST timezone
+- `build_datetime_iso()` - builds ISO datetime with correct timezone
+- `format_date_german()` - formats YYYY-MM-DD to DD.MM.YYYY
+- `message_tracker` - global instance for duplicate detection
+
+**Why:** Eliminated hardcoded strings scattered across files, centralized validation, fixed timezone being hardcoded to +01:00.
+
+#### 2. `src/api/routes.py`
+**Changes:**
+- Import `build_datetime_iso`, `format_date_german`, `message_tracker` from constants
+- Import `extract_date_only`, `extract_time_only` from text_parser
+- **Hybrid extraction**: LLM extraction + regex fallback for date/time
+- **Context persistence**: Store extracted `datum` in profile for multi-message booking
+- **Context-aware booking intent**: Pass customer context to `extract_booking_intent()`
+- **Data persistence fix**: `customer["last_booking_id"]` now saved via `update_profil()`
+- **KeyError safety**: Use `.get()` for message fields instead of direct access
+
+**Why:** LLM extraction was unreliable (missed "15 Uhr", gave wrong dates). Regex fallback ensures date/time extraction works. Context allows multi-message booking flow.
+
+#### 3. `src/services/chat_service.py`
+**Changes:**
+- `_parse_response()` now handles 3 formats:
+  1. Standard JSON (double quotes)
+  2. Python dict syntax (single quotes) - converted to JSON
+  3. `ast.literal_eval()` fallback for Python literals
+- Added `_extract_reply_profil()` helper method
+
+**Why:** LLM sometimes returned `{'reply': '...'}` (Python syntax with single quotes) instead of `{"reply": "..."}` (valid JSON). This caused the entire dict to be sent to WhatsApp as the message.
+
+#### 4. `src/services/extraction_service.py`
+**Changes:**
+- Improved prompt with explicit examples:
+  - `morgen = {tomorrow}` (actual date)
+  - `übermorgen = {day_after_tomorrow}` (actual date)
+  - `"15 Uhr" → "15:00"` examples
+- Added weekday to prompt: "Heute ist {weekday}, der {today}"
+- Enhanced date validation:
+  - Reject dates before 2020 (placeholders like 1970-01-01)
+  - Reject dates > 1 year in future
+  - Reject dates > 7 days in past
+- Removed duplicate `build_datetime_iso()` method (uses constants version)
+
+**Why:** LLM gave wrong dates for "morgen" (6 months off), placeholder dates like 1970-01-01, 0000-00-00 were accepted.
+
+#### 5. `src/services/customer_service.py`
+**Changes:**
+- Added `datum` and `uhrzeit` fields to default profile (for multi-message booking)
+- Added `last_booking_id` field to default profile
+- Uses `BotMessages`, `CustomerStatus` from constants
+
+**Why:** Needed to store partial booking data between messages. Booking ID was set but never persisted.
+
+#### 6. `src/utils/text_parser.py`
+**Changes:**
+- `extract_booking_intent()` now accepts optional `customer_context` parameter
+- Expanded booking keywords:
+  - Added: "probentraining" (LLM variant), "kommen", "vorbei", "testen", "probieren", "gebucht", "reservierung", "einbuchen", "eintragen"
+- Context-aware detection:
+  - If customer has name+email AND provides date/time → booking intent = True
+  - If customer has stored datum AND provides time → booking intent = True
+
+**Why:** Booking intent was False when user said "Probetraining" in message 2 but gave date in message 4. Keywords didn't include LLM variations ("Probentraining" vs "probetraining").
+
+#### 7. `src/api/__init__.py`
+**Changes:**
+- Removed `from api.routes import webhook_bp` to prevent LlamaBot loading during test imports
+
+**Why:** Tests failed with HFValidationError because LlamaBot was instantiated at import time.
+
+#### 8. `src/main.py`
+**Changes:**
+- Direct import: `from api.routes import webhook_bp`
+
+**Why:** Part of import chain fix.
+
+#### 9. Test Files Updated
+- `tests/unit/test_extraction_service.py` - Use dynamic `future_date` fixture
+- `tests/unit/test_chat_service.py` - Added 3 tests for Python dict parsing
+- `tests/integration/test_booking_flow.py` - Use dynamic `future_date` fixture
+- `tests/integration/test_webhook_routes.py` - Use `message_tracker.clear()` instead of patching
+
+### Current Test Status
+**196 tests passing** (was 193 before session, added 3 new tests)
+
+### Booking Flow - How It Works Now
+
+```
+1. User: "Ich heiße Michael Makelko und würde gerne ein Probetraining machen"
+   → Extraction: vorname="Michael", nachname="Makelko"
+   → Saved to profile
+   → Bot asks for email
+
+2. User: "meine email ist michael@test.de"
+   → Extraction: email="michael@test.de"
+   → Saved to profile
+   → Bot asks for date/time
+
+3. User: "Wie wäre es am 10.01.2026?"
+   → LLM extraction fails (returns [])
+   → Regex fallback: extract_date_only() → "2026-01-10"
+   → Saved to profile (datum)
+   → Booking intent: True (has_booking_data=True + has_date)
+   → No time → Bot asks: "Um welche Uhrzeit möchtest du am 10.01.2026 vorbeikommen?"
+
+4. User: "Um 15 Uhr"
+   → LLM extraction fails
+   → Regex fallback: extract_time_only() → "15:00"
+   → Context: profil.datum = "2026-01-10"
+   → Booking intent: True (has_partial_datetime=True + has_time)
+   → build_datetime_iso("2026-01-10", "15:00") → "2026-01-10T15:00:00+01:00"
+   → API call to MagicLine!
+```
+
+### Known Limitations / Future Work
+~~1. **LLM extraction still unreliable** - Fixed: Added `generate_extraction()` with temperature=0.1~~
+~~2. **Attention mask warning** - Fixed: Proper pad_token configuration~~
+~~3. **No booking confirmation persistence** - Fixed: Added `bookings` list with full booking history~~
+
+All major limitations from 2026-01-05 session have been addressed in the 2026-01-06 session.
+
+### Key Code Patterns
+
+**Hybrid Extraction (routes.py):**
+```python
+# Try LLM first
+extracted_date = extracted_data.get("datum")
+# Regex fallback if LLM failed
+if not extracted_date:
+    extracted_date = extract_date_only(text)
+    if extracted_date:
+        customer_service.update_profil(phone, {"datum": extracted_date})
+```
+
+**Context-Aware Booking Intent (text_parser.py):**
+```python
+if customer_context:
+    if has_booking_data and (has_date or has_time):
+        return True  # Customer in booking flow
+    if has_partial_datetime and (has_date or has_time):
+        return True  # Has stored datum, now providing time
+```
+
+**Multi-Format Response Parsing (chat_service.py):**
+```python
+# Try 1: Standard JSON
+data = json.loads(json_str)
+# Try 2: Python dict syntax (single quotes)
+fixed_str = json_str.replace("'", '"').replace("None", "null")
+data = json.loads(fixed_str)
+# Try 3: ast.literal_eval
+data = ast.literal_eval(json_str)
+```
