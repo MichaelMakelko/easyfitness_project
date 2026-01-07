@@ -133,6 +133,30 @@ def _is_valid_name(name: str) -> bool:
     """Check if a string looks like a valid name."""
     if not name or len(name) < 2 or len(name) > 30:
         return False
+
+    name_lower = name.lower()
+
+    # Blacklist of words that are NOT valid names
+    # These are commonly misidentified as names by regex patterns
+    invalid_names = {
+        # German articles and pronouns
+        "der", "die", "das", "ein", "eine", "ich", "du", "er", "sie", "es",
+        "wir", "ihr", "mein", "dein", "sein", "und", "oder", "aber",
+        # Common words in email context
+        "emailadresse", "email", "adresse", "mail", "ist", "meine", "deine",
+        "lautet", "heisst", "heißt", "kontakt", "erreichbar", "unter",
+        # Common words in booking context
+        "termin", "probetraining", "training", "buchung", "uhr", "datum",
+        "morgen", "heute", "montag", "dienstag", "mittwoch", "donnerstag",
+        "freitag", "samstag", "sonntag", "januar", "februar",
+        # Common German words
+        "bitte", "danke", "hallo", "guten", "tag", "gerne", "ja", "nein",
+        "okay", "super", "toll", "kommen", "möchte", "würde", "kann",
+    }
+
+    if name_lower in invalid_names:
+        return False
+
     # Name should be mostly letters
     letter_count = sum(1 for c in name if c.isalpha())
     return letter_count >= len(name) * 0.8

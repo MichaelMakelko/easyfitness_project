@@ -54,6 +54,8 @@ class BotMessages:
     BOOKING_GENERIC_ERROR = "Leider nicht verfügbar - wähle ein anderes Datum."
     BOOKING_VALIDATION_FAILED = "Deine Daten konnten nicht validiert werden. Bitte überprüfe Name und E-Mail."
     BOOKING_LEAD_CREATION_FAILED = "Lead konnte nicht erstellt werden. Bitte versuche es erneut."
+    BOOKING_SERVER_ERROR = "Technisches Problem beim Buchungssystem. Bitte versuche es in ein paar Minuten erneut."
+    BOOKING_NETWORK_ERROR = "Verbindungsproblem zum Buchungssystem. Bitte versuche es erneut."
 
     # Missing data prompts
     @staticmethod

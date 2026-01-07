@@ -154,7 +154,7 @@ class BookingService:
             email: Lead's email address
 
         Returns:
-            Validation response dictionary
+            Validation response dictionary with 'success', 'status_code', and optionally 'error'
         """
         payload = {
             "leadCustomerData": {
@@ -181,12 +181,16 @@ class BookingService:
             print(f"   Response: {response.text}")
 
             if response.status_code == 200:
-                return {"success": True, **response.json()}
+                return {"success": True, "status_code": 200, **response.json()}
             else:
-                return {"success": False, "error": response.text}
+                return {
+                    "success": False,
+                    "status_code": response.status_code,
+                    "error": response.text,
+                }
         except requests.RequestException as e:
             print(f"   ❌ Error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "status_code": 0, "error": str(e), "is_network_error": True}
 
     def create_lead(
         self, first_name: str, last_name: str, email: str
@@ -200,7 +204,7 @@ class BookingService:
             email: Lead's email address
 
         Returns:
-            Response dictionary with leadCustomerId or error
+            Response dictionary with leadCustomerId, status_code, or error
         """
         payload = {
             "leadCustomerData": {
@@ -227,12 +231,16 @@ class BookingService:
             print(f"   Response: {response.text}")
 
             if response.status_code == 200:
-                return {"success": True, **response.json()}
+                return {"success": True, "status_code": 200, **response.json()}
             else:
-                return {"success": False, "error": response.text}
+                return {
+                    "success": False,
+                    "status_code": response.status_code,
+                    "error": response.text,
+                }
         except requests.RequestException as e:
             print(f"   ❌ Error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "status_code": 0, "error": str(e), "is_network_error": True}
 
     def validate_appointment_for_lead(
         self,
@@ -372,15 +380,33 @@ class BookingService:
         lead_validation = self.validate_lead(first_name, last_name, email)
         if not lead_validation.get("success"):
             error = lead_validation.get("error", "Unbekannter Fehler")
-            print(f"   ❌ Lead-Validierung fehlgeschlagen: {error}")
-            return False, BotMessages.BOOKING_VALIDATION_FAILED, None
+            status_code = lead_validation.get("status_code", 0)
+            print(f"   ❌ Lead-Validierung fehlgeschlagen (Status {status_code}): {error}")
+
+            # Return appropriate error message based on status code
+            if lead_validation.get("is_network_error"):
+                return False, BotMessages.BOOKING_NETWORK_ERROR, None
+            elif status_code >= 500:
+                # Server error (500, 502, 503, etc.) - not user's fault
+                return False, BotMessages.BOOKING_SERVER_ERROR, None
+            else:
+                # Client error (400, 401, 403, 404, etc.) - likely data issue
+                return False, BotMessages.BOOKING_VALIDATION_FAILED, None
 
         # Step 2: Create lead → get leadCustomerId
         lead_creation = self.create_lead(first_name, last_name, email)
         if not lead_creation.get("success"):
             error = lead_creation.get("error", "Unbekannter Fehler")
-            print(f"   ❌ Lead-Erstellung fehlgeschlagen: {error}")
-            return False, BotMessages.BOOKING_LEAD_CREATION_FAILED, None
+            status_code = lead_creation.get("status_code", 0)
+            print(f"   ❌ Lead-Erstellung fehlgeschlagen (Status {status_code}): {error}")
+
+            # Return appropriate error message based on status code
+            if lead_creation.get("is_network_error"):
+                return False, BotMessages.BOOKING_NETWORK_ERROR, None
+            elif status_code >= 500:
+                return False, BotMessages.BOOKING_SERVER_ERROR, None
+            else:
+                return False, BotMessages.BOOKING_LEAD_CREATION_FAILED, None
 
         lead_customer_id = lead_creation.get("leadCustomerId")
         if not lead_customer_id:

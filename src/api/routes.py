@@ -115,7 +115,18 @@ def _handle_text_message(phone: str, text: str) -> None:
 
         # === REGEX FALLBACK for unreliable LLM extraction ===
         # Names: LLM often misses or misspells names
-        if not extracted_data.get("vorname") or not extracted_data.get("nachname"):
+        # IMPORTANT: Don't overwrite existing valid names in profile!
+        profil = customer.get("profil", {})
+        existing_vorname = profil.get("vorname")
+        existing_nachname = profil.get("nachname")
+
+        # Only try regex name extraction if:
+        # 1. LLM didn't extract names AND
+        # 2. No valid names exist in profile yet
+        needs_vorname = not extracted_data.get("vorname") and not existing_vorname
+        needs_nachname = not extracted_data.get("nachname") and not existing_nachname
+
+        if needs_vorname or needs_nachname:
             regex_vorname, regex_nachname = extract_full_name(text)
 
             # Special case: If regex found ONLY nachname (e.g., "Mein Nachname ist X")
@@ -126,10 +137,10 @@ def _handle_text_message(phone: str, text: str) -> None:
                     print(f"⚠️ LLM-Vorname '{llm_vorname}' war falsch (aus 'Mein Nachname ist...') - gelöscht")
                     extracted_data["vorname"] = None
 
-            if regex_vorname and not extracted_data.get("vorname"):
+            if regex_vorname and needs_vorname:
                 extracted_data["vorname"] = regex_vorname
                 print(f"📝 Vorname (Regex): {regex_vorname}")
-            if regex_nachname and not extracted_data.get("nachname"):
+            if regex_nachname and needs_nachname:
                 extracted_data["nachname"] = regex_nachname
                 print(f"📝 Nachname (Regex): {regex_nachname}")
 
@@ -188,6 +199,10 @@ def _handle_text_message(phone: str, text: str) -> None:
         # Refresh customer data before booking check to get latest profile
         customer = customer_service.get(phone)
 
+        # === FALLBACK: Ensure bot asks for missing booking data ===
+        # If LLM didn't ask a question but data is missing, append a prompt
+        reply = _ensure_asks_for_missing_data(reply, customer)
+
         # Handle booking intent (pass extracted_data for date/time)
         reply = _handle_booking_if_needed(phone, text, reply, extracted_data, customer)
 
@@ -200,6 +215,79 @@ def _handle_text_message(phone: str, text: str) -> None:
         print(f"❌ FEHLER bei Nachricht von {phone}: {e}")
         import traceback
         traceback.print_exc()
+
+
+def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any]) -> str:
+    """
+    Ensure bot asks for missing booking data if LLM forgot to.
+
+    This is a safety net for when the LLM responds without asking for
+    the next required piece of information in the booking flow.
+
+    Args:
+        reply: Current bot reply
+        customer: Customer data
+
+    Returns:
+        Reply with appended question if needed, otherwise unchanged
+    """
+    profil = customer.get("profil", {})
+
+    # Check if existing customer (has MagicLine ID)
+    is_existing_customer = bool(profil.get("magicline_customer_id"))
+
+    has_vorname = bool(profil.get("vorname"))
+    has_nachname = bool(profil.get("nachname"))
+    has_email = bool(profil.get("email"))
+    has_datum = bool(profil.get("datum"))
+    has_uhrzeit = bool(profil.get("uhrzeit"))
+
+    # Check if reply already contains a question
+    reply_has_question = "?" in reply
+
+    # If reply already has a question, don't add another
+    if reply_has_question:
+        return reply
+
+    # === EXISTING CUSTOMER: Only needs datum + uhrzeit ===
+    if is_existing_customer:
+        if not has_datum:
+            print("⚠️ Fallback (Bestandskunde): LLM vergaß nach Datum zu fragen")
+            return f"{reply} Wann möchtest du vorbeikommen? 📅"
+
+        if has_datum and not has_uhrzeit:
+            print("⚠️ Fallback (Bestandskunde): LLM vergaß nach Uhrzeit zu fragen")
+            date_german = format_date_german(profil.get("datum"))
+            return f"{reply} Um welche Uhrzeit am {date_german}? 🕐"
+
+        return reply
+
+    # === NEW LEAD: Needs vorname + nachname + email + datum + uhrzeit ===
+    # Priority: vorname → nachname → email → datum → uhrzeit
+
+    if not has_vorname:
+        # Only add question if customer seems to be in conversation
+        # (we don't want to ask strangers for their name unprompted)
+        return reply
+
+    if has_vorname and not has_nachname:
+        print("⚠️ Fallback: LLM vergaß nach Nachname zu fragen")
+        return f"{reply} Wie heißt du mit Nachnamen?"
+
+    if has_vorname and has_nachname and not has_email:
+        print("⚠️ Fallback: LLM vergaß nach Email zu fragen")
+        return f"{reply} Unter welcher E-Mail-Adresse kann ich dich erreichen? 📧"
+
+    if has_vorname and has_nachname and has_email and not has_datum:
+        print("⚠️ Fallback: LLM vergaß nach Datum zu fragen")
+        return f"{reply} Wann möchtest du zum Probetraining vorbeikommen? 📅"
+
+    if has_vorname and has_nachname and has_email and has_datum and not has_uhrzeit:
+        print("⚠️ Fallback: LLM vergaß nach Uhrzeit zu fragen")
+        date_german = format_date_german(profil.get("datum"))
+        return f"{reply} Um welche Uhrzeit am {date_german}? 🕐"
+
+    return reply
 
 
 def _handle_booking_if_needed(

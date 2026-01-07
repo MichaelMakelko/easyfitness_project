@@ -361,6 +361,39 @@ class TestExtractFullName:
         assert vorname == "Max"
         assert nachname == "Mustermann"
 
+    def test_extract_full_name_rejects_email_context_words(self):
+        """Test that email-related words are not mistaken for names.
+
+        Regression test for bug where "Meine Emailadresse ist bambo@outlook.de"
+        was incorrectly extracting "Emailadresse" as vorname and "ist" as nachname.
+        """
+        # The buggy case that triggered this fix
+        vorname, nachname = extract_full_name("Meine Emailadresse ist bambo@outlook.de")
+        assert vorname is None
+        assert nachname is None
+
+        # Similar patterns that should not extract names
+        vorname, nachname = extract_full_name("Meine Email ist test@example.com")
+        assert vorname is None
+        assert nachname is None
+
+        vorname, nachname = extract_full_name("Email Adresse test@example.com")
+        assert vorname is None
+        assert nachname is None
+
+    def test_extract_full_name_rejects_common_german_words(self):
+        """Test that common German words are not mistaken for names."""
+        # These should all return (None, None) due to blacklist
+        test_cases = [
+            "Hallo Guten Tag",
+            "Bitte Danke",
+            "Ja Nein",
+            "Heute Morgen",
+        ]
+        for text in test_cases:
+            vorname, nachname = extract_full_name(text)
+            assert vorname is None or nachname is None, f"Failed for: {text}"
+
 
 class TestExtractEmail:
     """Tests for extract_email function."""
