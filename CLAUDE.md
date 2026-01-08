@@ -475,3 +475,85 @@ We chose **Option A**: Profil-Context + Extraction behalten
 - **Hardcoded messages stay as fallback** → safety net if LLM misbehaves
 
 This is a non-breaking, additive change that improves bot intelligence without risking the extraction pipeline.
+
+---
+
+## Session Notes (2026-01-08) - Date Bug Fix & 1-Sentence Responses
+
+### Overview
+Fixed critical bug where wrong dates were stored after booking failures, and enforced max 1 sentence per bot response.
+
+### Issues Found in Live Test (Customer 491635130645)
+
+| Issue | Severity | Description |
+|-------|----------|-------------|
+| Wrong date persisted | CRITICAL | After booking failure (09.01), bot kept asking about 08.01 |
+| Responses too long | HIGH | Bot gave 2-4 sentences instead of 1 |
+| LLM went off-topic | HIGH | When asked for name/email, LLM asked about "Alter" instead |
+
+### Root Cause Analysis
+
+**Bug 1: Date Overwrite from Chat LLM**
+- Chat LLM's `profil` response included `datum` extracted from conversation HISTORY
+- After booking failure cleared `datum=None`, next message's Chat LLM response re-injected old date
+- Location: `routes.py:185-191` - `extracted_profil` update didn't exclude dates
+
+**Bug 2: Response Length**
+- Prompt said "Maximal 2-3 kurze Sätze" but user wanted MAX 1 sentence
+
+### Files Modified
+
+#### 1. `src/api/routes.py`
+- Added `excluded_fields = {"datum", "uhrzeit"}` to Chat LLM profil update
+- Prevents Chat LLM from overwriting dates extracted from conversation history
+
+```python
+# CRITICAL: Exclude datum/uhrzeit - Chat LLM extracts these from conversation
+# history which causes wrong dates after booking failure clears them
+excluded_fields = {"datum", "uhrzeit"}
+llm_only_fields = {
+    k: v for k, v in extracted_profil.items()
+    if v is not None and not extracted_data.get(k) and k not in excluded_fields
+}
+```
+
+#### 2. `src/prompts/fitnesstrainer_prompt.txt`
+- Changed "Maximal 2-3 kurze Sätze" → "MAXIMAL EIN SATZ pro Nachricht (STRIKT!)"
+- Added Rule 4: "Wenn Daten fehlen und Kunde antwortet mit etwas anderem → TROTZDEM nach den fehlenden Daten fragen!"
+- Shortened all examples to single sentences
+
+#### 3. `src/services/booking_service.py`
+- Fixed comment: "default 20 for EMS" → "default 30 min for Probetraining"
+
+#### 4. `tests/integration/test_webhook_routes.py`
+- Added `TestLLMProfilDateExclusion` test class
+- Test verifies datum/uhrzeit are excluded from Chat LLM profil updates
+
+### Current Test Status
+**321 tests passing** (was 320 before, added 1 new test)
+
+### Key Design Decisions
+
+**Why exclude datum/uhrzeit from Chat LLM profil?**
+- Chat LLM sees full conversation history in system prompt
+- It extracts dates mentioned in history (e.g., "08.01.2026" from bot's earlier message)
+- This causes wrong dates after `clear_booking_request()` clears the correct date
+- ExtractionService and regex handle dates independently per-message
+
+**Date Extraction Priority (unchanged):**
+1. Regex extraction (most reliable for explicit dates)
+2. ExtractionService LLM (for complex cases like "morgen")
+3. ~~Chat LLM profil~~ (NOW EXCLUDED for dates)
+
+### Booking Keywords (Updated List)
+```python
+booking_keywords = [
+    "probetraining", "probentraining", "probe training",
+    "termin", "buchen", "buchung", "gebucht",
+    "anmelden", "anmeldung", "reservieren", "reservierung",
+    "training machen", "training buchen",
+    "vorbeikommen", "vorbei kommen",  # "kommen" alone removed (too generic)
+    "ausprobieren", "testen", "probieren",
+    "einbuchen", "eintragen",
+]
+```
