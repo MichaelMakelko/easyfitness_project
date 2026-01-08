@@ -23,6 +23,8 @@ from utils.text_parser import (
     extract_booking_intent,
     extract_date_only,
     extract_time_only,
+    extract_full_name,
+    extract_email,
 )
 
 # Initialize services
@@ -111,6 +113,58 @@ def _handle_text_message(phone: str, text: str) -> None:
         print("🔍 Extrahiere Kundendaten...")
         extracted_data = extraction_service.extract_customer_data(text)
 
+        # === REGEX FALLBACK for unreliable LLM extraction ===
+        # Names: LLM often misses or misspells names
+        # IMPORTANT: Don't overwrite existing valid names in profile!
+        profil = customer.get("profil", {})
+        existing_vorname = profil.get("vorname")
+        existing_nachname = profil.get("nachname")
+
+        # Only try regex name extraction if:
+        # 1. LLM didn't extract names AND
+        # 2. No valid names exist in profile yet
+        needs_vorname = not extracted_data.get("vorname") and not existing_vorname
+        needs_nachname = not extracted_data.get("nachname") and not existing_nachname
+
+        if needs_vorname or needs_nachname:
+            regex_vorname, regex_nachname = extract_full_name(text)
+
+            # Special case: If regex found ONLY nachname (e.g., "Mein Nachname ist X")
+            # and LLM incorrectly extracted "Mein" as vorname, clear the wrong vorname
+            if regex_nachname and not regex_vorname:
+                llm_vorname = extracted_data.get("vorname", "").lower()
+                if llm_vorname in {"mein", "dein", "sein", "ihr"}:
+                    print(f"⚠️ LLM-Vorname '{llm_vorname}' war falsch (aus 'Mein Nachname ist...') - gelöscht")
+                    extracted_data["vorname"] = None
+
+            if regex_vorname and needs_vorname:
+                extracted_data["vorname"] = regex_vorname
+                print(f"📝 Vorname (Regex): {regex_vorname}")
+            if regex_nachname and needs_nachname:
+                extracted_data["nachname"] = regex_nachname
+                print(f"📝 Nachname (Regex): {regex_nachname}")
+
+        # Email: Regex is more reliable for email format
+        if not extracted_data.get("email"):
+            regex_email = extract_email(text)
+            if regex_email:
+                extracted_data["email"] = regex_email
+                print(f"📝 Email (Regex): {regex_email}")
+
+        # === DATE/TIME EXTRACTION ===
+        # IMPORTANT: Always extract and store date/time, even without booking intent!
+        # This ensures we don't lose data when user provides info across multiple messages
+        regex_date = extract_date_only(text)
+        regex_time = extract_time_only(text)
+
+        if regex_date and not extracted_data.get("datum"):
+            extracted_data["datum"] = regex_date
+            print(f"📝 Datum (Regex): {regex_date}")
+
+        if regex_time and not extracted_data.get("uhrzeit"):
+            extracted_data["uhrzeit"] = regex_time
+            print(f"📝 Uhrzeit (Regex): {regex_time}")
+
         # Update profile with extracted data
         if any(v for v in extracted_data.values() if v):
             customer_service.update_profil(phone, extracted_data)
@@ -123,10 +177,22 @@ def _handle_text_message(phone: str, text: str) -> None:
         reply, extracted_profil = chat_service.generate_response(customer, history, text)
         print(f"✅ Antwort generiert: {reply[:100]}...")
 
-        # Update profile if LLM also extracted data (merge with existing)
+        # Update profile if LLM also extracted data
+        # IMPORTANT: Only use LLM values that weren't already extracted by Regex
+        # Regex is more reliable for names/email, LLM is fallback
+        # CRITICAL: Exclude datum/uhrzeit - Chat LLM extracts these from conversation
+        # history which causes wrong dates after booking failure clears them
         if extracted_profil:
-            customer_service.update_profil(phone, extracted_profil)
-            print(f"📝 Profil (LLM) aktualisiert: {extracted_profil}")
+            # Filter out fields that Regex already extracted (Regex takes priority)
+            # Also exclude datum/uhrzeit - only ExtractionService and regex should handle dates
+            excluded_fields = {"datum", "uhrzeit"}
+            llm_only_fields = {
+                k: v for k, v in extracted_profil.items()
+                if v is not None and not extracted_data.get(k) and k not in excluded_fields
+            }
+            if llm_only_fields:
+                customer_service.update_profil(phone, llm_only_fields)
+                print(f"📝 Profil (LLM, ohne Regex-Duplikate): {llm_only_fields}")
 
         # Update status if name was extracted and customer was previously unknown
         # Use original_name to avoid race condition after profile update
@@ -136,6 +202,10 @@ def _handle_text_message(phone: str, text: str) -> None:
 
         # Refresh customer data before booking check to get latest profile
         customer = customer_service.get(phone)
+
+        # === FALLBACK: Ensure bot asks for missing booking data ===
+        # If LLM didn't ask a question but data is missing, append a prompt
+        reply = _ensure_asks_for_missing_data(reply, customer)
 
         # Handle booking intent (pass extracted_data for date/time)
         reply = _handle_booking_if_needed(phone, text, reply, extracted_data, customer)
@@ -151,6 +221,79 @@ def _handle_text_message(phone: str, text: str) -> None:
         traceback.print_exc()
 
 
+def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any]) -> str:
+    """
+    Ensure bot asks for missing booking data if LLM forgot to.
+
+    This is a safety net for when the LLM responds without asking for
+    the next required piece of information in the booking flow.
+
+    Args:
+        reply: Current bot reply
+        customer: Customer data
+
+    Returns:
+        Reply with appended question if needed, otherwise unchanged
+    """
+    profil = customer.get("profil", {})
+
+    # Check if existing customer (has MagicLine ID)
+    is_existing_customer = bool(profil.get("magicline_customer_id"))
+
+    has_vorname = bool(profil.get("vorname"))
+    has_nachname = bool(profil.get("nachname"))
+    has_email = bool(profil.get("email"))
+    has_datum = bool(profil.get("datum"))
+    has_uhrzeit = bool(profil.get("uhrzeit"))
+
+    # Check if reply already contains a question
+    reply_has_question = "?" in reply
+
+    # If reply already has a question, don't add another
+    if reply_has_question:
+        return reply
+
+    # === EXISTING CUSTOMER: Only needs datum + uhrzeit ===
+    if is_existing_customer:
+        if not has_datum:
+            print("⚠️ Fallback (Bestandskunde): LLM vergaß nach Datum zu fragen")
+            return f"{reply} Wann möchtest du vorbeikommen? 📅"
+
+        if has_datum and not has_uhrzeit:
+            print("⚠️ Fallback (Bestandskunde): LLM vergaß nach Uhrzeit zu fragen")
+            date_german = format_date_german(profil.get("datum"))
+            return f"{reply} Um welche Uhrzeit am {date_german}? 🕐"
+
+        return reply
+
+    # === NEW LEAD: Needs vorname + nachname + email + datum + uhrzeit ===
+    # Priority: vorname → nachname → email → datum → uhrzeit
+
+    if not has_vorname:
+        # Only add question if customer seems to be in conversation
+        # (we don't want to ask strangers for their name unprompted)
+        return reply
+
+    if has_vorname and not has_nachname:
+        print("⚠️ Fallback: LLM vergaß nach Nachname zu fragen")
+        return f"{reply} Wie heißt du mit Nachnamen?"
+
+    if has_vorname and has_nachname and not has_email:
+        print("⚠️ Fallback: LLM vergaß nach Email zu fragen")
+        return f"{reply} Unter welcher E-Mail-Adresse kann ich dich erreichen? 📧"
+
+    if has_vorname and has_nachname and has_email and not has_datum:
+        print("⚠️ Fallback: LLM vergaß nach Datum zu fragen")
+        return f"{reply} Wann möchtest du zum Probetraining vorbeikommen? 📅"
+
+    if has_vorname and has_nachname and has_email and has_datum and not has_uhrzeit:
+        print("⚠️ Fallback: LLM vergaß nach Uhrzeit zu fragen")
+        date_german = format_date_german(profil.get("datum"))
+        return f"{reply} Um welche Uhrzeit am {date_german}? 🕐"
+
+    return reply
+
+
 def _handle_booking_if_needed(
     phone: str,
     text: str,
@@ -161,7 +304,12 @@ def _handle_booking_if_needed(
     """
     Check for booking intent and process if needed.
 
-    Uses two different flows:
+    Strategy:
+    1. Load ALL stored profile data first
+    2. Overlay with freshly extracted data from current message
+    3. Check what's missing and either proceed to booking or ask for missing data
+
+    Uses two different booking flows:
     1. Regular booking: If customer has magicline_customer_id
     2. Trial offer booking: If customer is a new lead (no magicline_customer_id)
 
@@ -175,14 +323,24 @@ def _handle_booking_if_needed(
     Returns:
         Updated reply with booking status
     """
-    # Build customer context for booking intent detection
     profil = customer.get("profil", {})
-    has_booking_data = bool(
-        profil.get("vorname") and
-        profil.get("nachname") and
-        profil.get("email")
+
+    # === STEP 1: Load stored profile data ===
+    stored_vorname = profil.get("vorname")
+    stored_nachname = profil.get("nachname")
+    stored_email = profil.get("email")
+    stored_date = profil.get("datum")
+    stored_time = profil.get("uhrzeit")
+
+    # Check if ALL required data is already complete in profile
+    all_data_complete = bool(
+        stored_vorname and stored_nachname and stored_email and
+        stored_date and stored_time
     )
-    has_partial_datetime = bool(profil.get("datum") or profil.get("uhrzeit"))
+
+    # Build customer context for booking intent detection
+    has_booking_data = bool(stored_vorname and stored_nachname and stored_email)
+    has_partial_datetime = bool(stored_date or stored_time)
 
     customer_context = {
         "has_booking_data": has_booking_data,
@@ -190,62 +348,83 @@ def _handle_booking_if_needed(
     }
 
     booking_intent = extract_booking_intent(text, reply, customer_context)
-    print(f"📅 Buchungs-Intent erkannt: {booking_intent} (Kontext: {customer_context})")
+
+    # IMPORTANT: If ALL data is complete, auto-trigger booking intent!
+    # This handles cases where user provides the last missing piece (e.g., name/email)
+    # without explicitly saying "buchen" again
+    if all_data_complete and not booking_intent:
+        print(f"📅 Alle Daten komplett - Auto-Trigger Buchung!")
+        booking_intent = True
+
+    print(f"📅 Buchungs-Intent: {booking_intent} (Kontext: {customer_context}, alle Daten komplett: {all_data_complete})")
 
     if not booking_intent:
         return reply
 
-    # === HYBRID EXTRACTION: LLM + Regex Fallback ===
-    # Try LLM extraction first
-    extracted_date = extracted_data.get("datum")
-    extracted_time = extracted_data.get("uhrzeit")
+    # === STEP 2: Extract from current message ===
+    # IMPORTANT: Regex FIRST (more reliable), then LLM for complex cases like "morgen"
+    # This prevents LLM from returning wrong dates that override correct regex matches
 
-    # Regex fallback if LLM failed
-    date_from_regex = False
-    if not extracted_date:
-        extracted_date = extract_date_only(text)
-        if extracted_date:
-            print(f"📅 Datum (Regex-Fallback): {extracted_date}")
-            date_from_regex = True
+    # Try regex first (reliable for explicit dates like "07.01.", "9.1 um 10")
+    new_date = extract_date_only(text)
+    new_time = extract_time_only(text)
 
-    if not extracted_time:
-        extracted_time = extract_time_only(text)
-        if extracted_time:
-            print(f"📅 Uhrzeit (Regex-Fallback): {extracted_time}")
+    if new_date:
+        print(f"📅 Datum (Regex): {new_date}")
+    if new_time:
+        print(f"📅 Uhrzeit (Regex): {new_time}")
 
-    print(f"📅 Extrahiertes Datum: {extracted_date}")
-    print(f"📅 Extrahierte Uhrzeit: {extracted_time}")
+    # LLM fallback for complex cases (e.g., "morgen", "nächsten Montag")
+    if not new_date:
+        llm_date = extracted_data.get("datum")
+        if llm_date:
+            new_date = llm_date
+            print(f"📅 Datum (LLM-Fallback): {new_date}")
 
-    # === CONTEXT: Use stored values from profile if missing ===
-    profil = customer.get("profil", {})
+    if not new_time:
+        llm_time = extracted_data.get("uhrzeit")
+        if llm_time:
+            new_time = llm_time
+            print(f"📅 Uhrzeit (LLM-Fallback): {new_time}")
 
-    # If we have time but no date, check if there's a stored date
-    if extracted_time and not extracted_date:
-        stored_date = profil.get("datum")
-        if stored_date:
-            extracted_date = stored_date
-            print(f"📅 Verwende gespeichertes Datum: {extracted_date}")
+    # === STEP 3: Merge stored + new data (new takes priority) ===
+    final_date = new_date or stored_date
+    final_time = new_time or stored_time
 
-    # If we have date but no time, ask for time
-    if extracted_date and not extracted_time:
-        # Only save if we got a new date (avoid redundant saves)
-        if date_from_regex or extracted_data.get("datum"):
-            customer_service.update_profil(phone, {"datum": extracted_date})
+    print(f"📅 Finales Datum: {final_date} (neu: {new_date}, gespeichert: {stored_date})")
+    print(f"📅 Finale Uhrzeit: {final_time} (neu: {new_time}, gespeichert: {stored_time})")
+
+    # Save new date/time to profile for future messages
+    updates = {}
+    if new_date and new_date != stored_date:
+        updates["datum"] = new_date
+    if new_time and new_time != stored_time:
+        updates["uhrzeit"] = new_time
+    if updates:
+        customer_service.update_profil(phone, updates)
+        print(f"📅 Profil aktualisiert: {updates}")
+
+    # === STEP 4: Check what's missing ===
+    # Check date/time first
+    if final_date and not final_time:
         print("⚠️ Datum vorhanden aber keine Uhrzeit - frage nach Uhrzeit")
-        date_german = format_date_german(extracted_date)
+        date_german = format_date_german(final_date)
         return BotMessages.missing_time(date_german)
 
-    # Build full datetime
-    start_date_time = build_datetime_iso(extracted_date, extracted_time)
+    if final_time and not final_date:
+        print("⚠️ Uhrzeit vorhanden aber kein Datum - frage nach Datum")
+        return "An welchem Tag möchtest du vorbeikommen? 📅"
 
-    print(f"📅 Vollständiges Datum/Zeit: {start_date_time}")
+    # Build full datetime
+    start_date_time = build_datetime_iso(final_date, final_time)
 
     if not start_date_time:
         print("⚠️ Kein vollständiges Datum/Zeit gefunden - Buchung übersprungen")
         return reply
 
-    # Check if customer has MagicLine ID (registered customer)
-    profil = customer.get("profil", {})
+    print(f"📅 Vollständiges Datum/Zeit: {start_date_time}")
+
+    # === STEP 5: Check personal data and proceed to booking ===
     magicline_customer_id = profil.get("magicline_customer_id")
 
     if magicline_customer_id:
@@ -259,12 +438,12 @@ def _handle_booking_if_needed(
         # ===== TRIAL OFFER FLOW (für neue Leads) =====
         print("📅 Neuer Lead - verwende Trial Offer Flow")
 
-        # Get required data for trial offer booking
-        vorname = profil.get("vorname") or (
+        # Get required data - use stored profile data!
+        vorname = stored_vorname or (
             customer.get("name") if customer.get("name") != BotMessages.DEFAULT_NAME else None
         )
-        nachname = profil.get("nachname")
-        email = profil.get("email")
+        nachname = stored_nachname
+        email = stored_email
 
         # Check for missing required data
         missing_fields = []
@@ -306,5 +485,9 @@ def _handle_booking_if_needed(
         # Use only system message to avoid redundancy
         return f"✅ {message}"
     else:
+        # Clear datum/uhrzeit to prevent booking loop on next message
+        # (otherwise all_data_complete stays True and triggers booking again)
+        customer_service.clear_booking_request(phone)
+        print("📅 Datum/Uhrzeit gelöscht nach fehlgeschlagener Buchung")
         # Don't use LLM reply - it might say "ich buche dich ein" which contradicts the error
         return f"❌ {message}"

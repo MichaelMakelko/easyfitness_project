@@ -31,9 +31,12 @@ Requires ngrok or similar for WhatsApp webhook tunneling.
 ### Utility Scripts
 ```bash
 python scripts/send_with_template.py  # Send template messages
-python scripts/start_chat_with_anyone.py  # Initiate chats
+python scripts/start_chat_with_anyone.py  # Initiate chats (needs import path fix)
 python scripts/diagnose.py  # Diagnostic utility
 ```
+**Note:** Some scripts have outdated import paths. Update imports to use:
+- `from api.whatsapp_client import send_outbound_message`
+- `from services.customer_service import CustomerService`
 
 ## Architecture
 
@@ -50,10 +53,13 @@ WhatsApp Message → Flask Webhook (routes.py)
 ### Key Components
 
 - **LlamaBot** (`src/model/llama_model.py`): Llama 3.1 8B with 4-bit BitsAndBytes quantization. Requires ~7.6GB VRAM.
-- **ChatService** (`src/services/chat_service.py`): Builds prompts from `src/prompts/fitnesstrainer_prompt.txt`, parses JSON responses containing `reply` and `profil` fields.
-- **CustomerService** (`src/services/customer_service.py`): Persists customer data and conversation history to `data/customers.json`. Limits history to 100 messages.
+- **ChatService** (`src/services/chat_service.py`): Builds prompts from `src/prompts/fitnesstrainer_prompt.txt`, parses JSON responses containing `reply` and `profil` fields. Handles 3 response formats (JSON, Python dict, ast.literal_eval).
+- **CustomerService** (`src/services/customer_service.py`): Persists customer data and conversation history to `data/customers.json`. Limits history to 100 messages (trims to 80 when full).
 - **BookingService** (`src/services/booking_service.py`): MagicLine API integration for appointment validation and booking.
+- **ExtractionService** (`src/services/extraction_service.py`): LLM-based data extraction with temperature=0.1 for deterministic JSON output. Validates dates (rejects <2020, >1 year future, >7 days past).
 - **WhatsAppClient** (`src/api/whatsapp_client.py`): WhatsApp Cloud API v22.0 wrapper.
+- **Constants** (`src/constants.py`): Centralized constants including `CustomerStatus`, `BotMessages`, `ProcessedMessageTracker` (LRU-based duplicate detection), timezone handling, and validation utilities.
+- **TextParser** (`src/utils/text_parser.py`): Regex-based extraction for names, emails, dates, times, and booking intent detection.
 
 ### Data Storage
 
@@ -82,6 +88,12 @@ Copy `.env.example` to `.env` and configure:
 | `MAGICLINE_API_KEY` | MagicLine API key |
 | `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments (Probetraining = 30 min) |
 | `MAGICLINE_STUDIO_ID` | Studio ID |
+| `MAGICLINE_TEST_CUSTOMER_ID` | Test customer ID for development |
+| `MAGICLINE_TRIAL_OFFER_CONFIG_ID` | Config ID for trial offer bookings |
+| `EMAIL_SENDER` | (Optional) Email sender address |
+| `EMAIL_PASSWORD` | (Optional) Email password |
+| `EMAIL_SMTP_SERVER` | (Optional) SMTP server, default: smtp.gmail.com |
+| `EMAIL_SMTP_PORT` | (Optional) SMTP port, default: 587 |
 
 ## Booking Flow
 
@@ -103,18 +115,34 @@ Booking is triggered when:
 - Requires: `customerId`, `bookableAppointmentId`, `startDateTime`, `endDateTime`
 
 **2. Trial Offer Flow** (new leads without `magicline_customer_id`):
-- Uses `/trial-offers/` endpoints
+- Uses `/trial-offers/` endpoints for lead management, regular `/appointments/` for booking
 - Steps:
   1. `POST /trial-offers/lead/validate` - Validate lead data
-  2. `POST /trial-offers/lead/create` - Create lead in MagicLine
-  3. `POST /trial-offers/appointments/booking/validate` - Validate slot
-  4. `POST /trial-offers/appointments/booking/book` - Book appointment
+  2. `POST /trial-offers/lead/create` - Create lead in MagicLine → returns `leadCustomerId`
+  3. `POST /appointments/bookable/validate` - Validate slot (with `leadCustomerId` as `customerId`)
+  4. `POST /appointments/booking/book` - Book appointment (with `leadCustomerId` as `customerId`)
 - Required data: `vorname`, `nachname`, `email`, `slotStart`, `slotEnd`
 - Bot asks for missing data before attempting booking
 
 **General:**
 - Probetraining duration: **30 minutes**
 - Validates slot availability before booking
+
+### Fallback Data Request System
+
+The `_ensure_asks_for_missing_data()` function in `routes.py` ensures the bot asks for missing booking data if the LLM forgets. Priority order:
+
+**For new leads:** vorname → nachname → email → datum → uhrzeit
+**For existing customers:** datum → uhrzeit (no personal data needed)
+
+### Booking Keywords
+
+Booking intent is detected when message contains a keyword + date/time:
+- `probetraining`, `probentraining`, `termin`, `buchen`, `buchung`, `anmelden`, `reservieren`
+- `vorbeikommen`, `vorbei kommen`, `ausprobieren`, `testen`, `probieren`
+- `einbuchen`, `eintragen`, `training machen`, `training buchen`
+
+**Note:** `kommen` was removed (too generic, caused false positives like "kann nicht kommen")
 
 ## Customer Data Handling
 
@@ -278,17 +306,75 @@ Fixed critical bugs preventing the booking flow from working correctly. The main
 
 All major limitations from 2026-01-05 session have been addressed in the 2026-01-06 session.
 
+---
+
+## Session Notes (2026-01-06) - Live Test Fixes
+
+### Overview
+Fixed critical bugs discovered during live testing where booking conversations were failing to complete.
+
+### Key Issues Fixed
+
+#### 1. Date Parsing for "am 9.1" Format
+- Extended `extract_date_only()` to handle German short date format without trailing dot
+- Added `_build_date_with_smart_year()` for intelligent year selection at year boundaries
+- Now correctly parses: "am 9.1", "den 15.3", "9.1 um 10 Uhr"
+
+#### 2. Name Extraction from "Name, email" Format
+- Added `extract_full_name()` function to extract both vorname and nachname
+- Supports: "Britney Spears, email@test.de", "Ich heiße Max Mustermann", "Max Mustermann"
+- Added regex fallback for name extraction in `_handle_text_message()`
+
+#### 3. Extraction Priority Swap (Critical Fix)
+- **Before:** LLM first, regex fallback → LLM often returned wrong dates, overriding correct regex matches
+- **After:** Regex FIRST, LLM fallback → Regex is reliable for explicit dates, LLM only for complex cases like "morgen"
+
+#### 4. Auto-Trigger Booking When All Data Complete
+- If profile has all required data (vorname, nachname, email, datum, uhrzeit), booking is auto-triggered
+- Handles case where user provides last missing piece without saying "buchen" again
+
+#### 5. Profile Data Persistence Strategy
+- `_handle_booking_if_needed()` now follows 5-step strategy:
+  1. Load ALL stored profile data
+  2. Extract from current message (regex first, LLM fallback)
+  3. Merge: new data takes priority over stored
+  4. Check what's missing → ask or proceed
+  5. Book with complete data
+
+### Files Modified
+
+- **`src/utils/text_parser.py`**: Added `extract_full_name()`, `_is_valid_name()`, extended date regex
+- **`src/api/routes.py`**: Swapped extraction priority, added auto-trigger, added name/email regex fallback
+- **`tests/unit/test_text_parser.py`**: Added 21 new tests for `extract_full_name()` and date parsing
+
+### Current Test Status
+**219 tests passing** (was 198 before, added 21 new tests)
+
 ### Key Code Patterns
 
-**Hybrid Extraction (routes.py):**
+**Regex-First Extraction (routes.py:241-266):**
 ```python
-# Try LLM first
-extracted_date = extracted_data.get("datum")
-# Regex fallback if LLM failed
-if not extracted_date:
-    extracted_date = extract_date_only(text)
-    if extracted_date:
-        customer_service.update_profil(phone, {"datum": extracted_date})
+# === STEP 2: Extract from current message ===
+# IMPORTANT: Regex FIRST (more reliable), then LLM for complex cases like "morgen"
+new_date = extract_date_only(text)
+new_time = extract_time_only(text)
+
+# LLM fallback for complex cases (e.g., "morgen", "nächsten Montag")
+if not new_date:
+    llm_date = extracted_data.get("datum")
+    if llm_date:
+        new_date = llm_date
+```
+
+**Auto-Trigger Complete Booking (routes.py:229-235):**
+```python
+all_data_complete = bool(
+    stored_vorname and stored_nachname and stored_email and
+    stored_date and stored_time
+)
+if all_data_complete and not booking_intent:
+    print(f"📅 Alle Daten komplett - Auto-Trigger Buchung!")
+    booking_intent = True
 ```
 
 **Context-Aware Booking Intent (text_parser.py):**
@@ -310,3 +396,82 @@ data = json.loads(fixed_str)
 # Try 3: ast.literal_eval
 data = ast.literal_eval(json_str)
 ```
+
+---
+
+## Session Notes (2026-01-06 #2) - Booking Status Context for LLM
+
+### Overview
+Added booking status context to the LLM system prompt so the bot knows what data is present/missing for booking and can respond more intelligently.
+
+### Problem Solved
+Previously, the bot often:
+- Asked for data it already had (e.g., asking for name when `vorname` was stored)
+- Said "Ich buche dich ein!" when required data was missing
+- Gave contradictory responses (LLM said one thing, system overrode with hardcoded message)
+
+### Solution: Booking Status in System Prompt
+The LLM now receives a structured `[BUCHUNGSSTATUS]` section with only booking-relevant fields:
+
+```json
+{
+  "ist_bestandskunde": false,
+  "vorname": "Max",
+  "nachname": null,
+  "email": "max@test.de",
+  "datum": "2026-01-15",
+  "uhrzeit": null
+}
+```
+
+With clear instructions:
+- If a field is `null` → ask for it (ONE question per message)
+- If a field has a value → DON'T ask again
+- `ist_bestandskunde: true` → only needs datum + uhrzeit (not name/email)
+- All fields filled → confirm booking
+
+### Files Modified
+
+#### 1. `src/services/chat_service.py`
+- Added `_build_booking_status(profil)` method
+- Modified `build_system_prompt()` to inject `{{BUCHUNGSSTATUS}}`
+
+```python
+def _build_booking_status(self, profil: dict[str, Any]) -> dict[str, Any]:
+    is_existing_customer = bool(profil.get("magicline_customer_id"))
+    return {
+        "ist_bestandskunde": is_existing_customer,
+        "vorname": profil.get("vorname"),
+        "nachname": profil.get("nachname"),
+        "email": profil.get("email"),
+        "datum": profil.get("datum"),
+        "uhrzeit": profil.get("uhrzeit"),
+    }
+```
+
+#### 2. `src/prompts/fitnesstrainer_prompt.txt`
+- Added `[BUCHUNGSSTATUS]` section with clear rules and examples
+
+#### 3. `tests/conftest.py`
+- Updated `temp_prompt_file` fixture to include `{{BUCHUNGSSTATUS}}`
+
+#### 4. `tests/unit/test_chat_service.py`
+- Added 6 new tests for `_build_booking_status()`:
+  - `test_build_booking_status_new_customer`
+  - `test_build_booking_status_existing_customer`
+  - `test_build_booking_status_partial_data`
+  - `test_build_booking_status_complete_data`
+  - `test_build_booking_status_empty_profil`
+  - `test_build_booking_status_only_includes_booking_fields`
+
+### Current Test Status
+**227 tests passing** (was 221 before, added 6 new tests)
+
+### Architecture Decision: Keep Extraction Separate
+We chose **Option A**: Profil-Context + Extraction behalten
+
+- **Regex/LLM extraction remains separate** → reliable data extraction
+- **Bot gets profile context** → intelligent responses
+- **Hardcoded messages stay as fallback** → safety net if LLM misbehaves
+
+This is a non-breaking, additive change that improves bot intelligence without risking the extraction pipeline.

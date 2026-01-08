@@ -123,9 +123,10 @@ Regeln:
             data["nachname"] = None
 
         # Validate date format and reasonableness
-        if data.get("datum"):
+        datum = data.get("datum")
+        if datum:
             try:
-                parsed_date = datetime.strptime(data["datum"], "%Y-%m-%d")
+                parsed_date = datetime.strptime(datum, "%Y-%m-%d")
                 now = datetime.now()
 
                 # Reject placeholder dates (before 2020)
@@ -145,11 +146,12 @@ Regeln:
                 data["datum"] = None
 
         # Validate time format (HH:MM)
-        if data.get("uhrzeit"):
+        uhrzeit = data.get("uhrzeit")
+        if uhrzeit:
             try:
-                datetime.strptime(data["uhrzeit"], "%H:%M")
+                datetime.strptime(uhrzeit, "%H:%M")
             except ValueError:
-                print(f"⚠️ Invalid time format: {data['uhrzeit']}")
+                print(f"⚠️ Invalid time format: {uhrzeit}")
                 data["uhrzeit"] = None
 
         return data
@@ -164,7 +166,7 @@ Regeln:
         Returns:
             Dictionary with extracted data
         """
-        result = {"vorname": None, "nachname": None, "email": None, "datum": None, "uhrzeit": None}
+        result: dict[str, str | None] = {"vorname": None, "nachname": None, "email": None, "datum": None, "uhrzeit": None}
 
         try:
             # Find JSON in response

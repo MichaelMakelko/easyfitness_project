@@ -9,7 +9,17 @@
       "Bash(dir:*)",
       "Bash(findstr:*)",
       "Bash(pytest:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Bash(python:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(.venvScriptspython.exe -m pip show mypy pyright)",
+      "Bash(D:\\\\Github\\\\easyfitness_project\\\\.venv\\\\Scripts\\\\python.exe -m pip show:*)",
+      "Bash(D:Githubeasyfitness_project.venvScriptspip.exe install mypy --quiet)",
+      "Bash(D:Githubeasyfitness_project.venvScriptspython.exe -m mypy src --ignore-missing-imports)",
+      "Bash(pip install:*)",
+      "Bash(tree D:Githubeasyfitness_project /F /L 3)",
+      "Bash(cat:*)",
+      "Bash(wc:*)"
     ]
   }
 }
