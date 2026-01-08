@@ -36,7 +36,7 @@ class BookingService:
 		Args:
 			customer_id: MagicLine customer ID
 			start_datetime: Start time in ISO format
-			duration_minutes: Appointment duration (default 20 for EMS)
+			duration_minutes: Appointment duration (default 30 min for Probetraining)
 
 		Returns:
 			Validation response dictionary
@@ -78,7 +78,7 @@ class BookingService:
 		Args:
 			customer_id: MagicLine customer ID
 			start_datetime: Start time in ISO format
-			duration_minutes: Appointment duration (default 20 for EMS)
+			duration_minutes: Appointment duration (default 30 min for Probetraining)
 
 		Returns:
 			Booking response dictionary with bookingId or error

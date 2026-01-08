@@ -295,3 +295,71 @@ class TestWebhookPayloadVariants:
         )
 
         assert response.status_code == 200
+
+
+class TestLLMProfilDateExclusion:
+    """Tests for datum/uhrzeit exclusion from Chat LLM profil updates.
+
+    Bug fix: Chat LLM was extracting dates from conversation history,
+    causing wrong dates to be stored after booking failures.
+    """
+
+    @patch("api.routes.send_whatsapp_message")
+    @patch("api.routes.customer_service")
+    @patch("api.routes.chat_service")
+    @patch("api.routes.extraction_service")
+    def test_llm_profil_datum_excluded(
+        self, mock_extraction, mock_chat, mock_customer, mock_send, client
+    ):
+        """Test that datum from Chat LLM profil is NOT used to update profile."""
+        from constants import message_tracker
+        message_tracker.clear()
+
+        # Customer has no datum stored
+        mock_customer.get.return_value = {
+            "name": "Max",
+            "status": "Name bekannt",
+            "profil": {
+                "magicline_customer_id": None,
+                "vorname": "Max",
+                "nachname": "Test",
+                "email": "max@test.de",
+                "datum": None,
+                "uhrzeit": None,
+            },
+            "history": [],
+        }
+        mock_customer.get_history.return_value = []
+
+        # ExtractionService returns nothing (no date in message)
+        mock_extraction.extract_customer_data.return_value = {
+            "vorname": None, "nachname": None, "email": None,
+            "datum": None, "uhrzeit": None
+        }
+
+        # Chat LLM extracts datum from conversation history (BUG scenario)
+        mock_chat.generate_response.return_value = (
+            "Okay!",
+            {"datum": "2026-01-08", "uhrzeit": "10:00", "interesse_level": 5}
+        )
+        mock_send.return_value = True
+
+        payload = create_webhook_payload(text="Okay danke")
+
+        response = client.post(
+            "/webhook",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+
+        # Verify update_profil was called but NOT with datum/uhrzeit from LLM
+        calls = mock_customer.update_profil.call_args_list
+        for call in calls:
+            args, kwargs = call
+            if len(args) >= 2:
+                profil_data = args[1]
+                # datum and uhrzeit should NOT be in the LLM profil update
+                assert "datum" not in profil_data, "datum should be excluded from LLM profil"
+                assert "uhrzeit" not in profil_data, "uhrzeit should be excluded from LLM profil"

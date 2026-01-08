@@ -180,11 +180,15 @@ def _handle_text_message(phone: str, text: str) -> None:
         # Update profile if LLM also extracted data
         # IMPORTANT: Only use LLM values that weren't already extracted by Regex
         # Regex is more reliable for names/email, LLM is fallback
+        # CRITICAL: Exclude datum/uhrzeit - Chat LLM extracts these from conversation
+        # history which causes wrong dates after booking failure clears them
         if extracted_profil:
             # Filter out fields that Regex already extracted (Regex takes priority)
+            # Also exclude datum/uhrzeit - only ExtractionService and regex should handle dates
+            excluded_fields = {"datum", "uhrzeit"}
             llm_only_fields = {
                 k: v for k, v in extracted_profil.items()
-                if v is not None and not extracted_data.get(k)
+                if v is not None and not extracted_data.get(k) and k not in excluded_fields
             }
             if llm_only_fields:
                 customer_service.update_profil(phone, llm_only_fields)
