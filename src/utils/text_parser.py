@@ -162,7 +162,7 @@ def _is_valid_name(name: str) -> bool:
     return letter_count >= len(name) * 0.8
 
 
-def extract_booking_intent(text: str, reply: str, customer_context: dict = None) -> bool:
+def extract_booking_intent(text: str, reply: str, customer_context: dict | None = None) -> bool:
     """
     Detect if a booking/appointment is being requested.
 
