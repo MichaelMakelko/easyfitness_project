@@ -31,9 +31,12 @@ Requires ngrok or similar for WhatsApp webhook tunneling.
 ### Utility Scripts
 ```bash
 python scripts/send_with_template.py  # Send template messages
-python scripts/start_chat_with_anyone.py  # Initiate chats
+python scripts/start_chat_with_anyone.py  # Initiate chats (needs import path fix)
 python scripts/diagnose.py  # Diagnostic utility
 ```
+**Note:** Some scripts have outdated import paths. Update imports to use:
+- `from api.whatsapp_client import send_outbound_message`
+- `from services.customer_service import CustomerService`
 
 ## Architecture
 
@@ -50,10 +53,13 @@ WhatsApp Message → Flask Webhook (routes.py)
 ### Key Components
 
 - **LlamaBot** (`src/model/llama_model.py`): Llama 3.1 8B with 4-bit BitsAndBytes quantization. Requires ~7.6GB VRAM.
-- **ChatService** (`src/services/chat_service.py`): Builds prompts from `src/prompts/fitnesstrainer_prompt.txt`, parses JSON responses containing `reply` and `profil` fields.
-- **CustomerService** (`src/services/customer_service.py`): Persists customer data and conversation history to `data/customers.json`. Limits history to 100 messages.
+- **ChatService** (`src/services/chat_service.py`): Builds prompts from `src/prompts/fitnesstrainer_prompt.txt`, parses JSON responses containing `reply` and `profil` fields. Handles 3 response formats (JSON, Python dict, ast.literal_eval).
+- **CustomerService** (`src/services/customer_service.py`): Persists customer data and conversation history to `data/customers.json`. Limits history to 100 messages (trims to 80 when full).
 - **BookingService** (`src/services/booking_service.py`): MagicLine API integration for appointment validation and booking.
+- **ExtractionService** (`src/services/extraction_service.py`): LLM-based data extraction with temperature=0.1 for deterministic JSON output. Validates dates (rejects <2020, >1 year future, >7 days past).
 - **WhatsAppClient** (`src/api/whatsapp_client.py`): WhatsApp Cloud API v22.0 wrapper.
+- **Constants** (`src/constants.py`): Centralized constants including `CustomerStatus`, `BotMessages`, `ProcessedMessageTracker` (LRU-based duplicate detection), timezone handling, and validation utilities.
+- **TextParser** (`src/utils/text_parser.py`): Regex-based extraction for names, emails, dates, times, and booking intent detection.
 
 ### Data Storage
 
@@ -82,6 +88,12 @@ Copy `.env.example` to `.env` and configure:
 | `MAGICLINE_API_KEY` | MagicLine API key |
 | `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments (Probetraining = 30 min) |
 | `MAGICLINE_STUDIO_ID` | Studio ID |
+| `MAGICLINE_TEST_CUSTOMER_ID` | Test customer ID for development |
+| `MAGICLINE_TRIAL_OFFER_CONFIG_ID` | Config ID for trial offer bookings |
+| `EMAIL_SENDER` | (Optional) Email sender address |
+| `EMAIL_PASSWORD` | (Optional) Email password |
+| `EMAIL_SMTP_SERVER` | (Optional) SMTP server, default: smtp.gmail.com |
+| `EMAIL_SMTP_PORT` | (Optional) SMTP port, default: 587 |
 
 ## Booking Flow
 
@@ -103,18 +115,34 @@ Booking is triggered when:
 - Requires: `customerId`, `bookableAppointmentId`, `startDateTime`, `endDateTime`
 
 **2. Trial Offer Flow** (new leads without `magicline_customer_id`):
-- Uses `/trial-offers/` endpoints
+- Uses `/trial-offers/` endpoints for lead management, regular `/appointments/` for booking
 - Steps:
   1. `POST /trial-offers/lead/validate` - Validate lead data
-  2. `POST /trial-offers/lead/create` - Create lead in MagicLine
-  3. `POST /trial-offers/appointments/booking/validate` - Validate slot
-  4. `POST /trial-offers/appointments/booking/book` - Book appointment
+  2. `POST /trial-offers/lead/create` - Create lead in MagicLine → returns `leadCustomerId`
+  3. `POST /appointments/bookable/validate` - Validate slot (with `leadCustomerId` as `customerId`)
+  4. `POST /appointments/booking/book` - Book appointment (with `leadCustomerId` as `customerId`)
 - Required data: `vorname`, `nachname`, `email`, `slotStart`, `slotEnd`
 - Bot asks for missing data before attempting booking
 
 **General:**
 - Probetraining duration: **30 minutes**
 - Validates slot availability before booking
+
+### Fallback Data Request System
+
+The `_ensure_asks_for_missing_data()` function in `routes.py` ensures the bot asks for missing booking data if the LLM forgets. Priority order:
+
+**For new leads:** vorname → nachname → email → datum → uhrzeit
+**For existing customers:** datum → uhrzeit (no personal data needed)
+
+### Booking Keywords
+
+Booking intent is detected when message contains a keyword + date/time:
+- `probetraining`, `probentraining`, `termin`, `buchen`, `buchung`, `anmelden`, `reservieren`
+- `vorbeikommen`, `vorbei kommen`, `ausprobieren`, `testen`, `probieren`
+- `einbuchen`, `eintragen`, `training machen`, `training buchen`
+
+**Note:** `kommen` was removed (too generic, caused false positives like "kann nicht kommen")
 
 ## Customer Data Handling
 
