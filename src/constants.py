@@ -57,6 +57,32 @@ class BotMessages:
     BOOKING_SERVER_ERROR = "Technisches Problem beim Buchungssystem. Bitte versuche es in ein paar Minuten erneut."
     BOOKING_NETWORK_ERROR = "Verbindungsproblem zum Buchungssystem. Bitte versuche es erneut."
 
+    @staticmethod
+    def slot_unavailable_with_alternatives(alternatives: list[str]) -> str:
+        """
+        Message when requested slot is not available but alternatives exist.
+
+        Args:
+            alternatives: List of alternative time slots in HH:MM format
+
+        Returns:
+            German message suggesting alternative times
+        """
+        if not alternatives:
+            return BotMessages.BOOKING_SLOT_UNAVAILABLE
+
+        # Format alternatives with "Uhr" suffix
+        formatted = [f"{time} Uhr" for time in alternatives]
+
+        if len(formatted) == 1:
+            return f"Diese Zeit ist leider belegt. Wie wäre es um {formatted[0]}?"
+        elif len(formatted) == 2:
+            return f"Diese Zeit ist leider belegt. Verfügbar wäre: {formatted[0]} oder {formatted[1]}."
+        else:
+            last = formatted[-1]
+            rest = ", ".join(formatted[:-1])
+            return f"Diese Zeit ist leider belegt. Verfügbar wäre: {rest} oder {last}."
+
     # Missing data prompts
     @staticmethod
     def missing_time(date_german: str) -> str:

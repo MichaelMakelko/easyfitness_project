@@ -103,3 +103,55 @@ def create_lead_response(
         "success": False,
         "error": error_message or "Lead creation failed",
     }
+
+
+# ==================== Slot Availability Responses ====================
+
+SLOTS_AVAILABLE: list[dict[str, Any]] = [
+    {
+        "startDateTime": "2025-01-20T09:00:00+01:00",
+        "endDateTime": "2025-01-20T09:30:00+01:00",
+    },
+    {
+        "startDateTime": "2025-01-20T10:00:00+01:00",
+        "endDateTime": "2025-01-20T10:30:00+01:00",
+    },
+    {
+        "startDateTime": "2025-01-20T11:00:00+01:00",
+        "endDateTime": "2025-01-20T11:30:00+01:00",
+    },
+    {
+        "startDateTime": "2025-01-20T14:00:00+01:00",
+        "endDateTime": "2025-01-20T14:30:00+01:00",
+    },
+    {
+        "startDateTime": "2025-01-20T15:00:00+01:00",
+        "endDateTime": "2025-01-20T15:30:00+01:00",
+    },
+    {
+        "startDateTime": "2025-01-20T16:00:00+01:00",
+        "endDateTime": "2025-01-20T16:30:00+01:00",
+    },
+]
+
+SLOTS_EMPTY: list[dict[str, Any]] = []
+
+
+def create_slots_response(
+    slots: list[dict[str, Any]] | None = None,
+    as_dict: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """
+    Create a configurable slots response.
+
+    Args:
+        slots: List of slot dictionaries. If None, uses SLOTS_AVAILABLE.
+        as_dict: If True, wraps slots in {"slots": [...]} dict format.
+
+    Returns:
+        Either a list of slots or a dict with "slots" key.
+    """
+    slot_list = slots if slots is not None else SLOTS_AVAILABLE
+    if as_dict:
+        return {"slots": slot_list}
+    return slot_list

@@ -179,25 +179,38 @@ class TestTrialOfferBooking:
             "email": "max@test.de",
         })
 
-        # Mock all 4 API calls
+        booking_service = BookingService()
+
+        # Mock all 5 API calls (including pre-check)
+        # Step 0: Pre-check slots (slot is available)
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json=[{"startDateTime": "2025-01-20T14:00:00+01:00"}],
+            status=200,
+        )
+        # Step 1: Validate lead
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/validate",
             json={"success": True},
             status=200,
         )
+        # Step 2: Create lead
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/create",
             json={"success": True, "leadCustomerId": 67890},
             status=200,
         )
+        # Step 3: Validate appointment
         responses.add(
             responses.POST,
             f"{base_url}/appointments/bookable/validate",
             json={"success": True, "validationStatus": "AVAILABLE"},
             status=200,
         )
+        # Step 4: Book appointment
         responses.add(
             responses.POST,
             f"{base_url}/appointments/booking/book",
@@ -206,7 +219,6 @@ class TestTrialOfferBooking:
         )
 
         # Execute booking
-        booking_service = BookingService()
         success, message, booking_id = booking_service.try_book_trial_offer(
             first_name="Max",
             last_name="Mustermann",
@@ -222,6 +234,15 @@ class TestTrialOfferBooking:
         """Test trial offer fails when lead validation fails."""
         base_url = "https://mock-api.magicline.com/v1"
 
+        booking_service = BookingService()
+
+        # Pre-check fails with API error → fallback to old flow
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json={"error": "Server error"},
+            status=500,
+        )
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/validate",
@@ -229,7 +250,6 @@ class TestTrialOfferBooking:
             status=200,
         )
 
-        booking_service = BookingService()
         success, message, booking_id = booking_service.try_book_trial_offer(
             first_name="Max",
             last_name="Mustermann",
@@ -245,6 +265,15 @@ class TestTrialOfferBooking:
         """Test trial offer fails when slot not available."""
         base_url = "https://mock-api.magicline.com/v1"
 
+        booking_service = BookingService()
+
+        # Pre-check fails with API error → fallback to old flow
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json={"error": "Server error"},
+            status=500,
+        )
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/validate",
@@ -264,7 +293,6 @@ class TestTrialOfferBooking:
             status=200,
         )
 
-        booking_service = BookingService()
         success, message, booking_id = booking_service.try_book_trial_offer(
             first_name="Max",
             last_name="Mustermann",
@@ -342,15 +370,23 @@ class TestEndToEndScenarios:
         customer_service.update_profil("491234567890", {"email": extracted["email"]})
 
         # Step 4: Execute trial offer booking
+        customer = customer_service.get("491234567890")
+        booking_service = BookingService()
+        datetime_iso = build_datetime_iso(extracted["datum"], extracted["uhrzeit"])
+
+        # Mock all 5 API calls (including pre-check)
+        # Pre-check: slot is available
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json=[{"startDateTime": datetime_iso}],
+            status=200,
+        )
         responses.add(responses.POST, f"{base_url}/trial-offers/lead/validate", json={"success": True}, status=200)
         responses.add(responses.POST, f"{base_url}/trial-offers/lead/create", json={"success": True, "leadCustomerId": 67890}, status=200)
         responses.add(responses.POST, f"{base_url}/appointments/bookable/validate", json={"success": True, "validationStatus": "AVAILABLE"}, status=200)
         responses.add(responses.POST, f"{base_url}/appointments/booking/book", json={"success": True, "bookingId": 111222}, status=200)
 
-        customer = customer_service.get("491234567890")
-        booking_service = BookingService()
-
-        datetime_iso = build_datetime_iso(extracted["datum"], extracted["uhrzeit"])
         success, message, booking_id = booking_service.try_book_trial_offer(
             first_name=customer["profil"]["vorname"],
             last_name=customer["profil"]["nachname"],

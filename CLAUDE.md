@@ -557,3 +557,198 @@ booking_keywords = [
     "einbuchen", "eintragen",
 ]
 ```
+
+---
+
+## Session Notes (2026-01-09) - Slot Availability Pre-Check
+
+### Overview
+Added slot availability pre-check to prevent creating leads when requested time slots are already booked. Previously, leads were created in MagicLine even when the slot was unavailable, causing unnecessary data in the system.
+
+### Problem Solved
+**Before:**
+1. User requests: "Probetraining am 15.01. um 14:00"
+2. System validates lead → creates lead in MagicLine
+3. System validates slot → "Slot not available"
+4. **Result:** Lead created but booking failed = Lead garbage in MagicLine
+
+**After:**
+1. User requests: "Probetraining am 15.01. um 14:00"
+2. System checks slot availability FIRST via GET endpoint
+3. If unavailable → Returns alternative times, **NO lead created**
+4. If available → Proceeds with lead creation and booking
+
+### New Trial Offer Booking Flow
+
+```
+VORHER (4 API-Calls):              NACHHER (5 API-Calls):
+                                   0. GET /trial-offers/.../slots ← PRE-CHECK
+1. POST validate_lead              1. POST validate_lead
+2. POST create_lead                2. POST create_lead
+3. POST validate_appointment       3. POST validate_appointment
+4. POST book_appointment           4. POST book_appointment
+```
+
+**Key behavior:**
+- If pre-check fails with API error → Fallback to old flow (backwards compatible)
+- If slot not available → Early return with alternatives, NO lead created
+- If slot available → Continue with full booking flow
+
+### Files Modified
+
+#### 1. `src/services/booking_service.py`
+**Added 8 new methods for slot availability:**
+
+| Method | Purpose |
+|--------|---------|
+| `get_available_slots(date)` | GET `/trial-offers/appointments/{id}/slots` |
+| `check_slot_availability(start_datetime)` | Public pre-check API |
+| `_extract_date_from_datetime(iso)` | Extract YYYY-MM-DD from ISO datetime |
+| `_extract_time_from_datetime(iso)` | Extract HH:MM from ISO datetime |
+| `_is_slot_in_list(target, slots)` | Check if slot exists in list |
+| `_get_alternative_slots(target, slots)` | Find closest alternatives |
+| `_time_to_minutes(time_str)` | Convert HH:MM to minutes |
+
+**Modified `try_book_trial_offer()`:**
+```python
+# Step 0: PRE-CHECK slot availability BEFORE creating lead
+slot_check = self.check_slot_availability(start_datetime, duration_minutes)
+
+if not slot_check.get("api_error"):
+    if not slot_check.get("available"):
+        alternatives = slot_check.get("alternatives", [])
+        if alternatives:
+            return False, BotMessages.slot_unavailable_with_alternatives(alternatives), None
+        else:
+            return False, BotMessages.BOOKING_SLOT_UNAVAILABLE, None
+    print(f"   ✅ Slot verfügbar (Pre-Check)")
+else:
+    # API error - continue with old flow as fallback
+    print(f"   ⚠️ Pre-Check fehlgeschlagen - fahre mit altem Flow fort")
+```
+
+#### 2. `src/constants.py`
+**Added new BotMessage method:**
+```python
+@staticmethod
+def slot_unavailable_with_alternatives(alternatives: list[str]) -> str:
+    """
+    Message when requested slot is not available but alternatives exist.
+    Returns German message like:
+    "Diese Zeit ist leider belegt. Verfügbar wäre: 13:00 Uhr, 15:00 Uhr oder 16:00 Uhr."
+    """
+```
+
+#### 3. `tests/fixtures/magicline_responses.py`
+**Added slot response fixtures:**
+- `SLOTS_AVAILABLE` - List of 6 available slots
+- `SLOTS_EMPTY` - Empty slot list
+- `create_slots_response()` - Configurable slot response helper
+
+#### 4. Test Files Updated
+- `tests/unit/test_booking_service.py` - +33 new tests for slot availability
+- `tests/unit/test_session_changes.py` - +5 new tests for `slot_unavailable_with_alternatives()`
+- `tests/integration/test_booking_flow.py` - Updated existing tests for new flow
+
+### Current Test Status
+**354 tests passing** (was 321 before, added 33 new tests)
+
+### New API Endpoint Used
+
+```
+GET /v1/trial-offers/appointments/{bookableAppointmentId}/slots
+Query params: date=YYYY-MM-DD, duration=30
+
+Response formats supported:
+1. List: [{"startDateTime": "...", "endDateTime": "..."}]
+2. Dict: {"slots": [...]}
+```
+
+### Key Code Patterns
+
+**Pre-Check with Fallback (booking_service.py:684-701):**
+```python
+slot_check = self.check_slot_availability(start_datetime, duration_minutes)
+
+if not slot_check.get("api_error"):
+    # API succeeded - trust the result
+    if not slot_check.get("available"):
+        alternatives = slot_check.get("alternatives", [])
+        if alternatives:
+            return False, BotMessages.slot_unavailable_with_alternatives(alternatives), None
+        return False, BotMessages.BOOKING_SLOT_UNAVAILABLE, None
+else:
+    # API error - fallback to old flow
+    pass  # Continue with lead creation
+```
+
+**Alternative Slots Sorted by Distance (booking_service.py:357-411):**
+```python
+def _get_alternative_slots(self, target_datetime, slots, max_alternatives=3):
+    target_minutes = self._time_to_minutes(target_time)
+
+    slot_distances = []
+    for slot in slots:
+        slot_minutes = self._time_to_minutes(slot_time)
+        distance = abs(slot_minutes - target_minutes)
+        slot_distances.append((slot_time, distance))
+
+    slot_distances.sort(key=lambda x: x[1])
+    return [time for time, _ in slot_distances[:max_alternatives]]
+```
+
+**German Message Formatting (constants.py:60-84):**
+```python
+@staticmethod
+def slot_unavailable_with_alternatives(alternatives: list[str]) -> str:
+    formatted = [f"{time} Uhr" for time in alternatives]
+
+    if len(formatted) == 1:
+        return f"Diese Zeit ist leider belegt. Wie wäre es um {formatted[0]}?"
+    elif len(formatted) == 2:
+        return f"Diese Zeit ist leider belegt. Verfügbar wäre: {formatted[0]} oder {formatted[1]}."
+    else:
+        last = formatted[-1]
+        rest = ", ".join(formatted[:-1])
+        return f"Diese Zeit ist leider belegt. Verfügbar wäre: {rest} oder {last}."
+```
+
+### Example User Flow
+
+```
+User: "Probetraining am 15.01. um 14:00"
+
+CASE A - Slot available:
+   → GET slots: [13:00, 14:00, 15:00, 16:00]
+   → 14:00 in list ✓
+   → Continue with booking
+   → "Termin gebucht! Bestätigung per E-Mail unterwegs."
+
+CASE B - Slot not available:
+   → GET slots: [10:00, 11:00, 16:00, 17:00]
+   → 14:00 NOT in list
+   → Find alternatives closest to 14:00: [16:00, 11:00, 17:00]
+   → "Diese Zeit ist leider belegt. Verfügbar wäre: 16:00 Uhr, 11:00 Uhr oder 17:00 Uhr."
+   → NO lead created!
+
+CASE C - API error:
+   → GET slots: 500 Server Error
+   → api_error=True → Fallback to old flow
+   → Create lead, validate slot, get error there
+   → (Backwards compatible)
+```
+
+### Architecture Decision
+
+**Why pre-check instead of modifying validation step?**
+1. **Clean separation**: Slot check is independent of lead management
+2. **Better UX**: User gets alternatives immediately
+3. **Backwards compatible**: API errors fall back to old flow
+4. **No lead garbage**: Prevents unnecessary lead creation
+
+### MagicLine OpenAPI Reference
+
+The implementation uses the MagicLine OpenAPI endpoint documented at:
+- [Trial Offers API](https://developer.sportalliance.com/apis/magicline/openapi/openapi/trial-offers)
+- Base URL: `https://<tenant>.open-api.magicline.com/v1`
+- Auth: `X-API-KEY` header

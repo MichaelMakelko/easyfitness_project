@@ -366,6 +366,13 @@ class TestBookingServiceErrorHandling:
     @responses.activate
     def test_try_book_trial_offer_server_error_message(self, booking_service, base_url):
         """Test that 500 errors return BOOKING_SERVER_ERROR message."""
+        # Pre-check fails with API error → fallback to old flow
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json={"error": "Server error"},
+            status=500,
+        )
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/validate",
@@ -387,6 +394,13 @@ class TestBookingServiceErrorHandling:
     @responses.activate
     def test_try_book_trial_offer_network_error_message(self, booking_service, base_url):
         """Test that network errors return BOOKING_NETWORK_ERROR message."""
+        # Pre-check fails with API error → fallback to old flow
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json={"error": "Server error"},
+            status=500,
+        )
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/validate",
@@ -407,6 +421,13 @@ class TestBookingServiceErrorHandling:
     @responses.activate
     def test_try_book_trial_offer_client_error_message(self, booking_service, base_url):
         """Test that 400 errors return BOOKING_VALIDATION_FAILED message."""
+        # Pre-check fails with API error → fallback to old flow
+        responses.add(
+            responses.GET,
+            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            json={"error": "Server error"},
+            status=500,
+        )
         responses.add(
             responses.POST,
             f"{base_url}/trial-offers/lead/validate",
@@ -458,3 +479,42 @@ class TestNewBotMessageConstants:
         assert hasattr(BotMessages, 'BOOKING_NETWORK_ERROR')
         assert "verbindung" in BotMessages.BOOKING_NETWORK_ERROR.lower() or \
                "erneut" in BotMessages.BOOKING_NETWORK_ERROR.lower()
+
+
+class TestSlotUnavailableWithAlternatives:
+    """Tests for BotMessages.slot_unavailable_with_alternatives()."""
+
+    def test_empty_alternatives_returns_default(self):
+        """Test empty alternatives list returns default message."""
+        result = BotMessages.slot_unavailable_with_alternatives([])
+        assert result == BotMessages.BOOKING_SLOT_UNAVAILABLE
+
+    def test_single_alternative(self):
+        """Test message with single alternative."""
+        result = BotMessages.slot_unavailable_with_alternatives(["14:00"])
+        assert "14:00 Uhr" in result
+        assert "belegt" in result.lower()
+        assert "Wie wäre es" in result
+
+    def test_two_alternatives(self):
+        """Test message with two alternatives."""
+        result = BotMessages.slot_unavailable_with_alternatives(["14:00", "15:00"])
+        assert "14:00 Uhr" in result
+        assert "15:00 Uhr" in result
+        assert "oder" in result
+        assert "belegt" in result.lower()
+
+    def test_three_alternatives(self):
+        """Test message with three alternatives."""
+        result = BotMessages.slot_unavailable_with_alternatives(["10:00", "14:00", "16:00"])
+        assert "10:00 Uhr" in result
+        assert "14:00 Uhr" in result
+        assert "16:00 Uhr" in result
+        assert "oder" in result
+        assert "belegt" in result.lower()
+
+    def test_message_is_german(self):
+        """Test message is in German."""
+        result = BotMessages.slot_unavailable_with_alternatives(["14:00"])
+        # Contains German words
+        assert "belegt" in result.lower() or "verfügbar" in result.lower()
