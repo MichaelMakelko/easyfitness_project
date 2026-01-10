@@ -26,7 +26,7 @@ class TestIsValidNameBlacklist:
         # German articles
         "der", "die", "das", "ein", "eine", "ich", "du",
         # Booking context
-        "Termin", "termin", "Probetraining", "Training", "Uhr", "Datum",
+        "Termin", "termin", "Beratungstermin", "Beratung", "Training", "Uhr", "Datum",
         # Days/months
         "Montag", "montag", "Dienstag", "Januar", "februar",
         # Common words
@@ -153,7 +153,7 @@ class TestEnsureAsksForMissingData:
             return f"{reply} Unter welcher E-Mail-Adresse kann ich dich erreichen? 📧"
 
         if has_vorname and has_nachname and has_email and not has_datum:
-            return f"{reply} Wann möchtest du zum Probetraining vorbeikommen? 📅"
+            return f"{reply} Wann möchtest du zum Beratungstermin vorbeikommen? 📅"
 
         if has_vorname and has_nachname and has_email and has_datum and not has_uhrzeit:
             date_german = format_date_german(profil.get("datum"))
@@ -225,7 +225,7 @@ class TestEnsureAsksForMissingData:
         reply = "Perfekt!"
 
         result = self._ensure_asks_for_missing_data(reply, customer)
-        assert "Probetraining" in result or "vorbeikommen" in result
+        assert "Beratungstermin" in result or "vorbeikommen" in result
         assert reply in result
 
     def test_adds_uhrzeit_question_with_date(self):

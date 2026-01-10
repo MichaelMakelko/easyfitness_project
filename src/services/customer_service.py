@@ -34,7 +34,7 @@ class CustomerService:
         return {
             # MagicLine Integration
             "magicline_customer_id": None,  # Set manually after customer registers
-            # Personal Data (required for trial offer booking)
+            # Personal Data (required for consultation appointment booking)
             "vorname": None,
             "nachname": None,
             # Booking request data (temporary storage for multi-message booking)
@@ -60,7 +60,7 @@ class CustomerService:
             "wie_gefunden": None,
             # Lead Scoring
             "interesse_level": None,
-            "probetraining_datum": None,
+            "beratungstermin_datum": None,  # Changed from probetraining_datum
             "follow_up_datum": None,
             # Booking Tracking
             "last_booking_id": None,

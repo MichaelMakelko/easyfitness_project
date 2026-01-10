@@ -79,7 +79,7 @@ class TestGetCustomer:
             "fitness_erfahrung", "trainingsfrequenz", "aktuelles_studio",
             "gesundheitliche_einschraenkungen", "budget_bewusst", "zeitfenster",
             "entscheidungstraeger", "dringlichkeit", "wie_gefunden",
-            "interesse_level", "probetraining_datum", "follow_up_datum",
+            "interesse_level", "beratungstermin_datum", "follow_up_datum",
         ]
 
         for field in expected_fields:
@@ -190,13 +190,13 @@ class TestUpdateStatus:
         """Test status update is saved to file."""
         service = CustomerService(memory_file=temp_customers_file)
         service.get("491234567890")
-        service.update_status("491234567890", "Probetraining gebucht")
+        service.update_status("491234567890", "Beratungstermin gebucht")
 
         # Read file directly
         with open(temp_customers_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        assert data["491234567890"]["status"] == "Probetraining gebucht"
+        assert data["491234567890"]["status"] == "Beratungstermin gebucht"
 
 
 class TestUpdateHistory:

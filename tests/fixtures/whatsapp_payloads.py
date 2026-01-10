@@ -80,10 +80,10 @@ def create_status_update_payload() -> dict[str, Any]:
 
 # Sample booking messages in German
 BOOKING_MESSAGES = {
-    "probetraining_with_datetime": "Ich moechte ein Probetraining am 20.01.2025 um 14:00 Uhr",
-    "probetraining_date_only": "Kann ich am 20.01. vorbeikommen?",
-    "probetraining_time_only": "Termin um 14 Uhr bitte",
-    "probetraining_weekday": "Naechsten Montag Probetraining?",
+    "beratungstermin_with_datetime": "Ich moechte einen Beratungstermin am 20.01.2025 um 14:00 Uhr",
+    "beratungstermin_date_only": "Kann ich am 20.01. vorbeikommen?",
+    "beratungstermin_time_only": "Termin um 14 Uhr bitte",
+    "beratungstermin_weekday": "Naechsten Montag Beratungstermin?",
     "termin_buchen": "Termin buchen fuer morgen 10:00",
     "just_greeting": "Hallo, wie geht es?",
     "price_question": "Was kostet das Training bei euch?",

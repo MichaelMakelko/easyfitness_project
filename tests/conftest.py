@@ -77,7 +77,7 @@ def sample_customer_new() -> dict[str, Any]:
             "dringlichkeit": None,
             "wie_gefunden": None,
             "interesse_level": None,
-            "probetraining_datum": None,
+            "beratungstermin_datum": None,
             "follow_up_datum": None,
         },
         "history": [],
@@ -112,7 +112,7 @@ def sample_customer_with_name() -> dict[str, Any]:
             "dringlichkeit": None,
             "wie_gefunden": None,
             "interesse_level": None,
-            "probetraining_datum": None,
+            "beratungstermin_datum": None,
             "follow_up_datum": None,
         },
         "history": [
@@ -128,7 +128,7 @@ def sample_customer_registered() -> dict[str, Any]:
     """Sample registered customer with MagicLine ID."""
     return {
         "name": "Anna",
-        "status": "Probetraining gebucht",
+        "status": "Beratungstermin gebucht",
         "profil": {
             "magicline_customer_id": 12345,
             "vorname": "Anna",
@@ -150,7 +150,7 @@ def sample_customer_registered() -> dict[str, Any]:
             "dringlichkeit": "hoch",
             "wie_gefunden": "Instagram",
             "interesse_level": 5,
-            "probetraining_datum": "2025-01-20T18:00:00+01:00",
+            "beratungstermin_datum": "2025-01-20T18:00:00+01:00",
             "follow_up_datum": None,
         },
         "history": [],

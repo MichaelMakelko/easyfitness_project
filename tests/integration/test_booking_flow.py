@@ -22,9 +22,9 @@ def future_date():
 class TestBookingIntentDetection:
     """Integration tests for booking intent detection."""
 
-    def test_intent_with_probetraining_and_date(self):
-        """Test booking intent with 'probetraining' keyword and date."""
-        assert extract_booking_intent("Probetraining am 20.01.2025", "") is True
+    def test_intent_with_beratungstermin_and_date(self):
+        """Test booking intent with 'beratungstermin' keyword and date."""
+        assert extract_booking_intent("Beratungstermin am 20.01.2025", "") is True
 
     def test_intent_with_termin_and_weekday(self):
         """Test booking intent with 'termin' keyword and weekday."""
@@ -36,11 +36,11 @@ class TestBookingIntentDetection:
 
     def test_intent_keyword_in_reply(self):
         """Test booking intent when keyword is in bot reply."""
-        assert extract_booking_intent("am 20.01.", "Probetraining") is True
+        assert extract_booking_intent("am 20.01.", "Beratungstermin") is True
 
     def test_no_intent_without_date_or_time(self):
         """Test no booking intent without date/time."""
-        assert extract_booking_intent("Ich moechte ein Probetraining", "") is False
+        assert extract_booking_intent("Ich moechte einen Beratungstermin", "") is False
 
     def test_no_intent_without_keyword(self):
         """Test no booking intent without booking keyword."""
@@ -93,9 +93,9 @@ class TestCustomerDataFlow:
         assert customer["status"] == "Name bekannt"
 
         # After booking
-        service.update_status("491234567890", "Probetraining gebucht")
+        service.update_status("491234567890", "Beratungstermin gebucht")
         customer = service.get("491234567890")
-        assert customer["status"] == "Probetraining gebucht"
+        assert customer["status"] == "Beratungstermin gebucht"
 
 
 class TestRegisteredCustomerBooking:
@@ -313,7 +313,7 @@ class TestExtractionIntegration:
         mock_llm.generate_extraction.return_value = f'{{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
 
         service = ExtractionService(mock_llm)
-        result = service.extract_customer_data("Probetraining am 20.01. um 14 Uhr")
+        result = service.extract_customer_data("Beratungstermin am 20.01. um 14 Uhr")
 
         datetime_iso = build_datetime_iso(result["datum"], result["uhrzeit"])
         # Timezone will be dynamic (+01:00 or +02:00 depending on DST)
@@ -326,7 +326,7 @@ class TestExtractionIntegration:
         mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
 
         service = ExtractionService(mock_llm)
-        result = service.extract_customer_data("Probetraining am 20.01.")
+        result = service.extract_customer_data("Beratungstermin am 20.01.")
 
         datetime_iso = build_datetime_iso(result["datum"], result["uhrzeit"])
         assert datetime_iso is None
@@ -365,7 +365,7 @@ class TestEndToEndScenarios:
 
         # Step 3: Customer provides email and booking request
         mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}'
-        extracted = extraction_service.extract_customer_data("Probetraining am 20.01. um 14 Uhr, email max@test.de")
+        extracted = extraction_service.extract_customer_data("Beratungstermin am 20.01. um 14 Uhr, email max@test.de")
 
         customer_service.update_profil("491234567890", {"email": extracted["email"]})
 
@@ -398,6 +398,6 @@ class TestEndToEndScenarios:
         assert booking_id == 111222
 
         # Step 5: Update status after successful booking
-        customer_service.update_status("491234567890", "Probetraining gebucht")
+        customer_service.update_status("491234567890", "Beratungstermin gebucht")
         customer = customer_service.get("491234567890")
-        assert customer["status"] == "Probetraining gebucht"
+        assert customer["status"] == "Beratungstermin gebucht"

@@ -30,7 +30,7 @@ class CustomerStatus:
     """Customer status constants."""
     NEW_LEAD = "neuer Interessent"
     NAME_KNOWN = "Name bekannt"
-    TRIAL_BOOKED = "Probetraining gebucht"
+    TRIAL_BOOKED = "Beratungstermin gebucht"  # Changed from "Probetraining gebucht"
     MEMBER = "Mitglied"
 
 

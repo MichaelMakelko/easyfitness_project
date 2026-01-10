@@ -28,7 +28,7 @@ Wenn eine Information nicht in der Nachricht enthalten ist, setze den Wert auf n
   "dringlichkeit": null,
   "wie_gefunden": null,
   "interesse_level": null,
-  "probetraining_datum": null
+  "beratungstermin_datum": null
 }
 
 [REGELN]
@@ -62,7 +62,7 @@ Ausgabe:
   "dringlichkeit": null,
   "wie_gefunden": null,
   "interesse_level": 3,
-  "probetraining_datum": null
+  "beratungstermin_datum": null
 }
 
 Nachricht: "Ich heiße Anna, bin aus Braunschweig und will abnehmen. Hab euch auf Instagram gesehen!"
@@ -86,7 +86,7 @@ Ausgabe:
   "dringlichkeit": null,
   "wie_gefunden": "Instagram",
   "interesse_level": 4,
-  "probetraining_datum": null
+  "beratungstermin_datum": null
 }
 
 Nachricht: "Ja ich will Samstag um 14 Uhr kommen! Meine Email ist max@gmail.com"
@@ -110,5 +110,5 @@ Ausgabe:
   "dringlichkeit": "hoch",
   "wie_gefunden": null,
   "interesse_level": 5,
-  "probetraining_datum": "Samstag 14:00"
+  "beratungstermin_datum": "Samstag 14:00"
 }
