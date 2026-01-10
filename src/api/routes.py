@@ -205,7 +205,7 @@ def _handle_text_message(phone: str, text: str) -> None:
 
         # === FALLBACK: Ensure bot asks for missing booking data ===
         # If LLM didn't ask a question but data is missing, append a prompt
-        reply = _ensure_asks_for_missing_data(reply, customer)
+        reply = _ensure_asks_for_missing_data(reply, customer, text)
 
         # Handle booking intent (pass extracted_data for date/time)
         reply = _handle_booking_if_needed(phone, text, reply, extracted_data, customer)
@@ -221,7 +221,29 @@ def _handle_text_message(phone: str, text: str) -> None:
         traceback.print_exc()
 
 
-def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any]) -> str:
+def _is_agreement_response(text: str) -> bool:
+    """
+    Check if user message is an agreement/confirmation response.
+
+    These responses indicate the user wants to proceed but the LLM
+    might just respond with "Great!" without asking a follow-up question.
+    """
+    agreement_words = [
+        "ja", "klar", "gerne", "ok", "okay", "jo", "jop", "jup",
+        "ja klar", "ja gerne", "ja bitte", "ja gern",
+        "super", "cool", "toll", "prima", "perfekt", "passt",
+        "machen wir", "gern", "sehr gerne", "auf jeden fall",
+        "logo", "sicher", "natürlich", "klingt gut", "bin dabei",
+    ]
+    lower = text.lower().strip()
+    # Check for exact match or starts with agreement word
+    for word in agreement_words:
+        if lower == word or lower.startswith(word + " ") or lower.startswith(word + "!"):
+            return True
+    return False
+
+
+def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any], user_message: str = "") -> str:
     """
     Ensure bot asks for missing booking data if LLM forgot to.
 
@@ -231,6 +253,7 @@ def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any]) -> str:
     Args:
         reply: Current bot reply
         customer: Customer data
+        user_message: The user's original message (for detecting agreement)
 
     Returns:
         Reply with appended question if needed, otherwise unchanged
@@ -252,6 +275,35 @@ def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any]) -> str:
     # If reply already has a question, don't add another
     if reply_has_question:
         return reply
+
+    # === CRITICAL: Detect agreement response without follow-up question ===
+    # If user says "ja klar" and bot just says "Great!" → Ask for first missing field
+    user_agreed = _is_agreement_response(user_message)
+
+    if user_agreed and not reply_has_question:
+        print(f"⚠️ User stimmte zu ('{user_message}') aber Bot fragte nicht weiter")
+
+        # Check what's missing and ask for it
+        if not has_vorname:
+            print("⚠️ Fallback: Frage nach Vorname")
+            return f"{reply} Wie heißt du? 😊"
+
+        if not has_nachname:
+            print("⚠️ Fallback: Frage nach Nachname")
+            return f"{reply} Und wie ist dein Nachname?"
+
+        if not has_email:
+            print("⚠️ Fallback: Frage nach Email")
+            return f"{reply} Unter welcher E-Mail kann ich dich erreichen? 📧"
+
+        if not has_datum:
+            print("⚠️ Fallback: Frage nach Datum")
+            return f"{reply} Wann möchtest du vorbeikommen? 📅"
+
+        if not has_uhrzeit:
+            print("⚠️ Fallback: Frage nach Uhrzeit")
+            date_german = format_date_german(profil.get("datum"))
+            return f"{reply} Um welche Uhrzeit am {date_german}? 🕐"
 
     # === EXISTING CUSTOMER: Only needs datum + uhrzeit ===
     if is_existing_customer:
