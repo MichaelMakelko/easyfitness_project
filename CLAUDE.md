@@ -86,7 +86,7 @@ Copy `.env.example` to `.env` and configure:
 | `MODEL_PATH` | Path to local Llama model directory |
 | `MAGICLINE_BASE_URL` | MagicLine API base URL |
 | `MAGICLINE_API_KEY` | MagicLine API key |
-| `MAGICLINE_BOOKABLE_ID` | Bookable ID for appointments (Probetraining = 30 min) |
+| `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER` | Bookable ID for trial offer appointments (Probetraining = 30 min) |
 | `MAGICLINE_STUDIO_ID` | Studio ID |
 | `MAGICLINE_TEST_CUSTOMER_ID` | Test customer ID for development |
 | `MAGICLINE_TRIAL_OFFER_CONFIG_ID` | Config ID for trial offer bookings |

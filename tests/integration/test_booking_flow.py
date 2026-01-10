@@ -185,7 +185,7 @@ class TestTrialOfferBooking:
         # Step 0: Pre-check slots (slot is available)
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=[{"startDateTime": "2025-01-20T14:00:00+01:00"}],
             status=200,
         )
@@ -203,17 +203,17 @@ class TestTrialOfferBooking:
             json={"success": True, "leadCustomerId": 67890},
             status=200,
         )
-        # Step 3: Validate appointment
+        # Step 3: Validate appointment (trial-offer specific endpoint)
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/trial-offers/appointments/booking/validate",
             json={"success": True, "validationStatus": "AVAILABLE"},
             status=200,
         )
-        # Step 4: Book appointment
+        # Step 4: Book appointment (trial-offer specific endpoint)
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/trial-offers/appointments/booking/book",
             json={"success": True, "bookingId": 999999},
             status=200,
         )
@@ -239,7 +239,7 @@ class TestTrialOfferBooking:
         # Pre-check fails with API error → fallback to old flow
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -270,7 +270,7 @@ class TestTrialOfferBooking:
         # Pre-check fails with API error → fallback to old flow
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -288,7 +288,7 @@ class TestTrialOfferBooking:
         )
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/trial-offers/appointments/booking/validate",
             json={"success": True, "validationStatus": "NOT_AVAILABLE"},
             status=200,
         )
@@ -378,14 +378,14 @@ class TestEndToEndScenarios:
         # Pre-check: slot is available
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=[{"startDateTime": datetime_iso}],
             status=200,
         )
         responses.add(responses.POST, f"{base_url}/trial-offers/lead/validate", json={"success": True}, status=200)
         responses.add(responses.POST, f"{base_url}/trial-offers/lead/create", json={"success": True, "leadCustomerId": 67890}, status=200)
-        responses.add(responses.POST, f"{base_url}/appointments/bookable/validate", json={"success": True, "validationStatus": "AVAILABLE"}, status=200)
-        responses.add(responses.POST, f"{base_url}/appointments/booking/book", json={"success": True, "bookingId": 111222}, status=200)
+        responses.add(responses.POST, f"{base_url}/trial-offers/appointments/booking/validate", json={"success": True, "validationStatus": "AVAILABLE"}, status=200)
+        responses.add(responses.POST, f"{base_url}/trial-offers/appointments/booking/book", json={"success": True, "bookingId": 111222}, status=200)
 
         success, message, booking_id = booking_service.try_book_trial_offer(
             first_name=customer["profil"]["vorname"],

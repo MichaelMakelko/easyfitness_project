@@ -28,14 +28,14 @@ def base_url() -> str:
 
 
 class TestValidateSlot:
-    """Tests for validate_slot method."""
+    """Tests for validate_slot method (for REGISTERED customers, not trial offers)."""
 
     @responses.activate
     def test_validate_slot_available(self, booking_service, base_url):
         """Test slot validation when slot is available."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/appointments/bookable/validate",  # Regular endpoint for registered customers
             json=VALIDATION_AVAILABLE,
             status=200,
         )
@@ -52,7 +52,7 @@ class TestValidateSlot:
         """Test slot validation when slot is not available."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/appointments/bookable/validate",  # Regular endpoint for registered customers
             json=VALIDATION_NOT_AVAILABLE,
             status=200,
         )
@@ -69,7 +69,7 @@ class TestValidateSlot:
         """Test slot validation handles request errors."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/appointments/bookable/validate",  # Regular endpoint for registered customers
             body=RequestException("Connection error"),
         )
 
@@ -86,7 +86,7 @@ class TestValidateSlot:
         """Test correct payload is sent to API."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/appointments/bookable/validate",  # Regular endpoint for registered customers
             json=VALIDATION_AVAILABLE,
             status=200,
         )
@@ -104,14 +104,14 @@ class TestValidateSlot:
 
 
 class TestBookAppointment:
-    """Tests for book_appointment method."""
+    """Tests for book_appointment method (for REGISTERED customers, not trial offers)."""
 
     @responses.activate
     def test_book_appointment_success(self, booking_service, base_url):
         """Test successful appointment booking."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/appointments/booking/book",  # Regular endpoint for registered customers
             json=BOOKING_SUCCESS,
             status=200,
         )
@@ -129,7 +129,7 @@ class TestBookAppointment:
         """Test failed appointment booking."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/appointments/booking/book",  # Regular endpoint for registered customers
             json=BOOKING_FAILED,
             status=400,
         )
@@ -146,7 +146,7 @@ class TestBookAppointment:
         """Test booking handles request errors."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/appointments/booking/book",  # Regular endpoint for registered customers
             body=RequestException("Connection error"),
         )
 
@@ -160,19 +160,19 @@ class TestBookAppointment:
 
 
 class TestTryBook:
-    """Tests for try_book method (validate + book)."""
+    """Tests for try_book method (validate + book) - for REGISTERED customers."""
 
     @responses.activate
     def test_try_book_success(self, booking_service, base_url):
         """Test successful validate and book flow."""
-        # Mock validation
+        # Mock validation (regular endpoint for registered customers)
         responses.add(
             responses.POST,
             f"{base_url}/appointments/bookable/validate",
             json=VALIDATION_AVAILABLE,
             status=200,
         )
-        # Mock booking
+        # Mock booking (regular endpoint for registered customers)
         responses.add(
             responses.POST,
             f"{base_url}/appointments/booking/book",
@@ -194,7 +194,7 @@ class TestTryBook:
         """Test try_book when slot is not available."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/appointments/bookable/validate",  # Regular endpoint for registered customers
             json=VALIDATION_NOT_AVAILABLE,
             status=200,
         )
@@ -213,13 +213,13 @@ class TestTryBook:
         """Test try_book when booking fails after successful validation."""
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/appointments/bookable/validate",  # Regular endpoint for registered customers
             json=VALIDATION_AVAILABLE,
             status=200,
         )
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/appointments/booking/book",  # Regular endpoint for registered customers
             json=BOOKING_FAILED,
             status=400,
         )
@@ -315,7 +315,7 @@ class TestTrialOfferFlow:
         # Pre-check fails → fallback to old flow
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -336,14 +336,14 @@ class TestTrialOfferFlow:
         # Step 3: Validate appointment
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/trial-offers/appointments/booking/validate",
             json={"success": True, "validationStatus": "AVAILABLE"},
             status=200,
         )
         # Step 4: Book appointment
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/trial-offers/appointments/booking/book",
             json={"success": True, "bookingId": 1234567890},
             status=200,
         )
@@ -364,7 +364,7 @@ class TestTrialOfferFlow:
         # Pre-check fails → fallback to old flow
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -391,7 +391,7 @@ class TestTrialOfferFlow:
         # Pre-check fails → fallback to old flow
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -424,7 +424,7 @@ class TestTrialOfferFlow:
         # Pre-check fails → fallback to old flow
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -442,7 +442,7 @@ class TestTrialOfferFlow:
         )
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/trial-offers/appointments/booking/validate",
             json={"success": True, "validationStatus": "NOT_AVAILABLE"},
             status=200,
         )
@@ -516,7 +516,7 @@ class TestGetAvailableSlots:
 
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=SLOTS_AVAILABLE,
             status=200,
         )
@@ -534,7 +534,7 @@ class TestGetAvailableSlots:
 
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"slots": SLOTS_AVAILABLE},
             status=200,
         )
@@ -549,7 +549,7 @@ class TestGetAvailableSlots:
         """Test slot retrieval when no slots available."""
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=[],
             status=200,
         )
@@ -564,7 +564,7 @@ class TestGetAvailableSlots:
         """Test slot retrieval handles API errors."""
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Unauthorized"},
             status=401,
         )
@@ -580,7 +580,7 @@ class TestGetAvailableSlots:
         """Test slot retrieval handles network errors."""
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             body=RequestException("Connection error"),
         )
 
@@ -600,7 +600,7 @@ class TestCheckSlotAvailability:
 
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=SLOTS_AVAILABLE,
             status=200,
         )
@@ -618,7 +618,7 @@ class TestCheckSlotAvailability:
 
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=SLOTS_AVAILABLE,
             status=200,
         )
@@ -637,7 +637,7 @@ class TestCheckSlotAvailability:
         """Test check when no slots available for the day."""
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=[],
             status=200,
         )
@@ -653,7 +653,7 @@ class TestCheckSlotAvailability:
         """Test check returns api_error=True on API failure for fallback."""
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -783,7 +783,7 @@ class TestTrialOfferWithPreCheck:
         # Step 0: Pre-check slots
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=SLOTS_AVAILABLE,
             status=200,
         )
@@ -804,14 +804,14 @@ class TestTrialOfferWithPreCheck:
         # Step 3: Validate appointment
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/trial-offers/appointments/booking/validate",
             json={"success": True, "validationStatus": "AVAILABLE"},
             status=200,
         )
         # Step 4: Book appointment
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/trial-offers/appointments/booking/book",
             json={"success": True, "bookingId": 1234567890},
             status=200,
         )
@@ -840,7 +840,7 @@ class TestTrialOfferWithPreCheck:
 
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=limited_slots,
             status=200,
         )
@@ -865,7 +865,7 @@ class TestTrialOfferWithPreCheck:
         # Pre-check fails with server error
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json={"error": "Server error"},
             status=500,
         )
@@ -884,13 +884,13 @@ class TestTrialOfferWithPreCheck:
         )
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/bookable/validate",
+            f"{base_url}/trial-offers/appointments/booking/validate",
             json={"success": True, "validationStatus": "AVAILABLE"},
             status=200,
         )
         responses.add(
             responses.POST,
-            f"{base_url}/appointments/booking/book",
+            f"{base_url}/trial-offers/appointments/booking/book",
             json={"success": True, "bookingId": 999},
             status=200,
         )
@@ -913,7 +913,7 @@ class TestTrialOfferWithPreCheck:
         """Test trial offer when no slots available at all."""
         responses.add(
             responses.GET,
-            f"{base_url}/trial-offers/appointments/{booking_service.bookable_id}/slots",
+            f"{base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{booking_service.bookable_id}/slots",
             json=[],
             status=200,
         )

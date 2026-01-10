@@ -8,7 +8,7 @@ import requests
 from config import (
 	MAGICLINE_API_KEY,
 	MAGICLINE_BASE_URL,
-	MAGICLINE_BOOKABLE_ID,
+	MAGICLINE_BOOKABLE_ID_TRIAL_OFFER,
 	MAGICLINE_TRIAL_OFFER_CONFIG_ID,
 )
 from constants import BotMessages
@@ -20,7 +20,7 @@ class BookingService:
 	def __init__(self):
 		self.base_url = MAGICLINE_BASE_URL
 		self.api_key = MAGICLINE_API_KEY
-		self.bookable_id = MAGICLINE_BOOKABLE_ID
+		self.bookable_id = MAGICLINE_BOOKABLE_ID_TRIAL_OFFER
 		self.trial_offer_config_id = MAGICLINE_TRIAL_OFFER_CONFIG_ID
 		self.headers = {
 			"X-API-KEY": self.api_key,
@@ -148,7 +148,11 @@ class BookingService:
 		"""
 		Get available slots for trial offers on a specific date.
 
-		Uses the trial-offers appointments slots endpoint to fetch available slots.
+		Uses the trial-offers bookable appointments slots endpoint to fetch available slots.
+
+		IMPORTANT: The correct endpoint path is:
+		/v1/trial-offers/bookable-trial-offers/appointments/bookable/{bookableAppointmentId}/slots
+		NOT: /v1/trial-offers/appointments/{id}/slots (this returns 404!)
 
 		Args:
 			date: Date in YYYY-MM-DD format
@@ -160,7 +164,8 @@ class BookingService:
 			- slots: list of available slot dictionaries (each with startDateTime, endDateTime)
 			- error: error message if failed
 		"""
-		url = f"{self.base_url}/trial-offers/appointments/{self.bookable_id}/slots"
+		# FIXED: Correct endpoint path for trial-offers slots
+		url = f"{self.base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{self.bookable_id}/slots"
 		params = {
 			"date": date,
 			"duration": duration_minutes,
@@ -550,9 +555,11 @@ class BookingService:
 		duration_minutes: int = 30,
 	) -> dict[str, Any]:
 		"""
-		Validate appointment slot for a lead customer.
+		Validate appointment slot for a lead customer (trial offer).
 
-		Uses the regular appointment validation endpoint with leadCustomerId.
+		IMPORTANT: Uses the trial-offer specific validation endpoint:
+		/v1/trial-offers/appointments/booking/validate
+		NOT: /v1/appointments/bookable/validate (this doesn't check for conflicts!)
 
 		Args:
 			lead_customer_id: Lead customer ID from create_lead
@@ -571,7 +578,8 @@ class BookingService:
 			"endDateTime": end_datetime,
 		}
 
-		url = f"{self.base_url}/appointments/bookable/validate"
+		# FIXED: Use trial-offer specific validation endpoint
+		url = f"{self.base_url}/trial-offers/appointments/booking/validate"
 		print(f"🔍 VALIDATE APPOINTMENT FOR LEAD REQUEST:")
 		print(f"   URL: {url}")
 		print(f"   Payload: {payload}")
@@ -601,9 +609,11 @@ class BookingService:
 		duration_minutes: int = 30,
 	) -> dict[str, Any]:
 		"""
-		Book an appointment for a lead customer.
+		Book an appointment for a lead customer (trial offer).
 
-		Uses the regular appointment booking endpoint with leadCustomerId.
+		IMPORTANT: Uses the trial-offer specific booking endpoint:
+		/v1/trial-offers/appointments/booking/book
+		NOT: /v1/appointments/booking/book (allows double-booking!)
 
 		Args:
 			lead_customer_id: Lead customer ID from create_lead
@@ -622,7 +632,8 @@ class BookingService:
 			"endDateTime": end_datetime,
 		}
 
-		url = f"{self.base_url}/appointments/booking/book"
+		# FIXED: Use trial-offer specific booking endpoint
+		url = f"{self.base_url}/trial-offers/appointments/booking/book"
 		print(f"📅 BOOK APPOINTMENT FOR LEAD REQUEST:")
 		print(f"   URL: {url}")
 		print(f"   Payload: {payload}")

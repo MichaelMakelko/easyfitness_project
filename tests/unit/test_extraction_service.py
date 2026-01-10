@@ -36,7 +36,8 @@ class TestExtractCustomerData:
         {{"vorname": "Max", "nachname": "Mustermann", "email": "max@test.de", "datum": "{future_date}", "uhrzeit": "14:00"}}
         '''
 
-        result = extraction_service.extract_customer_data("Test message")
+        # Message must contain date keyword for date to be accepted (hallucination prevention)
+        result = extraction_service.extract_customer_data("Ich komme morgen um 14 Uhr")
 
         assert result["vorname"] == "Max"
         assert result["nachname"] == "Mustermann"
@@ -94,7 +95,8 @@ class TestExtractCustomerData:
         """Test that 'null' and 'none' string values are converted to None."""
         mock_llm.generate_extraction.return_value = f'{{"vorname": "null", "nachname": "none", "email": "", "datum": "{future_date}", "uhrzeit": "14:00"}}'
 
-        result = extraction_service.extract_customer_data("Test")
+        # Message must contain date keyword for date to be accepted (hallucination prevention)
+        result = extraction_service.extract_customer_data("Termin heute bitte")
 
         assert result["vorname"] is None
         assert result["nachname"] is None
@@ -199,3 +201,126 @@ class TestParseExtractionResponse:
         result = extraction_service._parse_extraction_response(response)
 
         assert result["vorname"] is None
+
+
+class TestDateHallucinationPrevention:
+    """Tests for LLM date hallucination prevention."""
+
+    def test_reject_date_when_no_date_keywords_in_message(self, extraction_service, mock_llm):
+        """
+        CRITICAL: If user message has NO date keywords, reject LLM-extracted date.
+
+        Bug scenario:
+        - User: "Ich will ein Probetraining machen"
+        - LLM hallucinates: {"datum": "2026-01-15"}
+        - Expected: datum should be None (no date in original message)
+        """
+        # LLM hallucinates a date from a message with no date keywords
+        mock_llm.generate_extraction.return_value = '{"vorname": null, "nachname": null, "email": null, "datum": "2026-01-15", "uhrzeit": null}'
+
+        result = extraction_service.extract_customer_data("Ich will ein Probetraining machen")
+
+        # Date should be rejected as hallucination
+        assert result["datum"] is None
+
+    def test_accept_date_when_morgen_in_message(self, extraction_service, mock_llm):
+        """Accept LLM date when 'morgen' keyword present."""
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{tomorrow}", "uhrzeit": null}}'
+
+        result = extraction_service.extract_customer_data("Ich möchte morgen kommen")
+
+        assert result["datum"] == tomorrow
+
+    def test_accept_date_when_heute_in_message(self, extraction_service, mock_llm):
+        """Accept LLM date when 'heute' keyword present."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{today}", "uhrzeit": null}}'
+
+        result = extraction_service.extract_customer_data("Kann ich heute vorbeikommen?")
+
+        assert result["datum"] == today
+
+    def test_accept_date_when_explicit_date_in_message(self, extraction_service, mock_llm, future_date):
+        """Accept LLM date when explicit date pattern (DD.MM.) in message."""
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
+
+        result = extraction_service.extract_customer_data("Probetraining am 15.01. bitte")
+
+        assert result["datum"] == future_date
+
+    def test_accept_date_when_weekday_in_message(self, extraction_service, mock_llm, future_date):
+        """Accept LLM date when weekday name in message."""
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
+
+        result = extraction_service.extract_customer_data("Geht Montag?")
+
+        assert result["datum"] == future_date
+
+    def test_reject_date_generic_greeting(self, extraction_service, mock_llm):
+        """Reject hallucinated dates from generic greetings."""
+        mock_llm.generate_extraction.return_value = '{"vorname": null, "nachname": null, "email": null, "datum": "2026-01-20", "uhrzeit": null}'
+
+        result = extraction_service.extract_customer_data("Hallo, guten Tag!")
+
+        assert result["datum"] is None
+
+    def test_reject_date_from_email_only_message(self, extraction_service, mock_llm):
+        """Reject hallucinated dates when user only provides email."""
+        mock_llm.generate_extraction.return_value = '{"vorname": null, "nachname": null, "email": "test@example.de", "datum": "2026-01-15", "uhrzeit": null}'
+
+        result = extraction_service.extract_customer_data("Meine Email ist test@example.de")
+
+        assert result["email"] == "test@example.de"
+        assert result["datum"] is None  # No date keywords in message
+
+    def test_accept_date_with_uebermorgen(self, extraction_service, mock_llm):
+        """Accept LLM date when 'übermorgen' keyword present."""
+        day_after = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{day_after}", "uhrzeit": null}}'
+
+        result = extraction_service.extract_customer_data("Übermorgen wäre super")
+
+        assert result["datum"] == day_after
+
+    def test_accept_date_with_naechste_woche(self, extraction_service, mock_llm, future_date):
+        """Accept LLM date when 'nächste woche' in message."""
+        mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
+
+        result = extraction_service.extract_customer_data("Nächste Woche wäre gut")
+
+        assert result["datum"] == future_date
+
+
+class TestValidateExtractedDataSignature:
+    """Tests for _validate_extracted_data method signature."""
+
+    def test_validate_works_without_original_text(self, extraction_service):
+        """Test validation still works when original_text not provided (backwards compat)."""
+        data = {
+            "vorname": "Max",
+            "nachname": "Mustermann",
+            "email": "max@test.de",
+            "datum": None,
+            "uhrzeit": "14:00",
+        }
+
+        result = extraction_service._validate_extracted_data(data)
+
+        assert result["vorname"] == "Max"
+        assert result["uhrzeit"] == "14:00"
+
+    def test_validate_with_original_text_and_no_date(self, extraction_service):
+        """Test validation with original_text but no date in data."""
+        data = {
+            "vorname": "Max",
+            "nachname": None,
+            "email": None,
+            "datum": None,
+            "uhrzeit": None,
+        }
+
+        result = extraction_service._validate_extracted_data(data, original_text="Ich bin Max")
+
+        assert result["vorname"] == "Max"
+        assert result["datum"] is None

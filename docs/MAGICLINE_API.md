@@ -290,7 +290,7 @@ POST /appointments/booking/book
 |----------|--------------|----------|
 | `MAGICLINE_BASE_URL` | API Base URL | `https://api.magicline.com/v1` |
 | `MAGICLINE_API_KEY` | API Authentifizierung | `sk-...` |
-| `MAGICLINE_BOOKABLE_ID` | ID für Probetraining-Termine | `100` |
+| `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER` | ID für Trial Offer Probetraining-Termine | `100` |
 | `MAGICLINE_STUDIO_ID` | Studio-ID | `12345` |
 | `MAGICLINE_TRIAL_OFFER_CONFIG_ID` | Trial Offer Konfiguration | `67890` |
 | `MAGICLINE_TEST_CUSTOMER_ID` | Test-Kunden-ID für Development | `99999` |

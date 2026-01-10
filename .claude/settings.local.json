@@ -19,7 +19,23 @@
       "Bash(pip install:*)",
       "Bash(tree D:Githubeasyfitness_project /F /L 3)",
       "Bash(cat:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "WebFetch(domain:developer.sportalliance.com)",
+      "WebSearch",
+      "WebFetch(domain:developer.magicline.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:apitracker.io)",
+      "WebFetch(domain:connectapi.developer.magicline.com)",
+      "WebFetch(domain:marketplace.magicline.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:redocly.sportalliance.com)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(.venv\\\\Scripts\\\\python.exe -m pytest:*)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_extraction_service.py -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_text_parser.py::TestContainsDateKeywords -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -v --tb=short)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_booking_service.py -v --tb=short)",
+      "Bash(.venvScriptspython -m pytest tests/ --tb=no -q)"
     ]
   }
 }

@@ -93,12 +93,23 @@ def extract_full_name(text: str) -> tuple[Optional[str], Optional[str]]:
                     if _is_valid_name(vorname) and _is_valid_name(nachname):
                         return vorname.capitalize(), nachname.capitalize()
 
-    # Pattern 2: "Vorname Nachname, email@domain.de" or "Vorname Nachname email@domain.de"
+    # Pattern 2: Name + Email (in either order)
+    # Handles: "Vorname Nachname email@..." or "email@... Vorname Nachname"
+    # Also handles: "Vorname Nachname und meine email ist X@Y.de"
     email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
     if email_match:
-        # Get text before the email
+        # Try 2a: Get text BEFORE the email
         before_email = text[:email_match.start()].strip().rstrip(",").strip()
-        words = before_email.split()
+
+        # Check if there's "und" + email keywords separating name from email address
+        # Pattern: "Name1 Name2 und meine email ist" or "Name1 Name2 und email"
+        email_separator = re.search(r'\s+und\s+(?:meine\s+)?(?:e-?mail|mail)\s+(?:ist\s+)?', before_email, re.IGNORECASE)
+        if email_separator:
+            # Extract names from BEFORE the separator
+            name_part = before_email[:email_separator.start()].strip()
+            words = name_part.split()
+        else:
+            words = before_email.split()
 
         if len(words) >= 2:
             # Take last two words before email as name
@@ -109,6 +120,22 @@ def extract_full_name(text: str) -> tuple[Optional[str], Optional[str]]:
         elif len(words) == 1:
             # Only one word, could be just vorname
             vorname = words[0].strip(",.!?")
+            if _is_valid_name(vorname):
+                return vorname.capitalize(), None
+
+        # Try 2b: Get text AFTER the email (email comes first)
+        after_email = text[email_match.end():].strip().lstrip(",").strip()
+        words_after = after_email.split()
+
+        if len(words_after) >= 2:
+            # Take first two words after email as name
+            vorname = words_after[0].strip(",.!?")
+            nachname = words_after[1].strip(",.!?")
+            if _is_valid_name(vorname) and _is_valid_name(nachname):
+                return vorname.capitalize(), nachname.capitalize()
+        elif len(words_after) == 1:
+            # Only one word after email
+            vorname = words_after[0].strip(",.!?")
             if _is_valid_name(vorname):
                 return vorname.capitalize(), None
 
@@ -392,3 +419,44 @@ def extract_email(text: str) -> Optional[str]:
     """
     match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text.lower())
     return match.group(0) if match else None
+
+
+def contains_date_keywords(text: str) -> bool:
+    """
+    Check if text contains any date-related keywords.
+
+    Used to prevent LLM date hallucinations: if the user message doesn't
+    contain ANY date-related term, we should reject LLM-extracted dates.
+
+    Args:
+        text: Text to check
+
+    Returns:
+        True if text contains date-related keywords
+    """
+    lower = text.lower()
+
+    # Explicit date patterns (DD.MM. or DD.MM.YYYY)
+    if re.search(r'\d{1,2}\.\d{1,2}\.', lower):
+        return True
+    if re.search(r'\d{1,2}\.\d{1,2}(?!\d|\.)', lower):  # DD.MM without trailing dot
+        return True
+
+    # Relative date keywords (German)
+    relative_keywords = [
+        "heute", "morgen", "übermorgen",
+        "nächste woche", "diese woche", "nächsten",
+        "kommenden", "kommende", "am wochenende",
+    ]
+    if any(kw in lower for kw in relative_keywords):
+        return True
+
+    # Weekday names (German)
+    weekdays = [
+        "montag", "dienstag", "mittwoch", "donnerstag",
+        "freitag", "samstag", "sonntag",
+    ]
+    if any(day in lower for day in weekdays):
+        return True
+
+    return False

@@ -683,7 +683,7 @@ tests/
 Erforderliche Anpassungen pro Studio:
 1. `.env` mit neuen API-Keys (WhatsApp, MagicLine)
 2. Prompt-Anpassung (Studioname, Adresse, Öffnungszeiten)
-3. `MAGICLINE_BOOKABLE_ID` für korrekten Termintyp
+3. `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER` für korrekten Termintyp
 4. Eigene `customers.json` pro Installation
 
 ### White-Label-Potenzial

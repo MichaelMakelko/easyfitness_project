@@ -24,7 +24,7 @@ PROMPTS_DIR: Path = BASE_DIR / "src" / "prompts"
 # MagicLine API
 MAGICLINE_BASE_URL: str = os.getenv("MAGICLINE_BASE_URL", "https://open-api.magicline.com/v1")
 MAGICLINE_API_KEY: str = os.getenv("MAGICLINE_API_KEY", "")
-MAGICLINE_BOOKABLE_ID: int = int(os.getenv("MAGICLINE_BOOKABLE_ID", "0"))
+MAGICLINE_BOOKABLE_ID_TRIAL_OFFER: int = int(os.getenv("MAGICLINE_BOOKABLE_ID_TRIAL_OFFER", "0"))
 MAGICLINE_STUDIO_ID: int = int(os.getenv("MAGICLINE_STUDIO_ID", "0"))
 MAGICLINE_TEST_CUSTOMER_ID: int = int(os.getenv("MAGICLINE_TEST_CUSTOMER_ID", "0"))
 MAGICLINE_TRIAL_OFFER_CONFIG_ID: int = int(os.getenv("MAGICLINE_TRIAL_OFFER_CONFIG_ID", "0"))
