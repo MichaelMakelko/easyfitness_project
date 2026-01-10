@@ -284,7 +284,7 @@ def _ensure_asks_for_missing_data(reply: str, customer: dict[str, Any]) -> str:
 
     if has_vorname and has_nachname and has_email and not has_datum:
         print("⚠️ Fallback: LLM vergaß nach Datum zu fragen")
-        return f"{reply} Wann möchtest du zum Probetraining vorbeikommen? 📅"
+        return f"{reply} Wann möchtest du zum Beratungstermin vorbeikommen? 📅"
 
     if has_vorname and has_nachname and has_email and has_datum and not has_uhrzeit:
         print("⚠️ Fallback: LLM vergaß nach Uhrzeit zu fragen")

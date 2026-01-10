@@ -173,7 +173,7 @@ def _is_valid_name(name: str) -> bool:
         "emailadresse", "email", "adresse", "mail", "ist", "meine", "deine",
         "lautet", "heisst", "heißt", "kontakt", "erreichbar", "unter",
         # Common words in booking context
-        "termin", "probetraining", "training", "buchung", "uhr", "datum",
+        "termin", "beratungstermin", "beratung", "training", "buchung", "uhr", "datum",
         "morgen", "heute", "montag", "dienstag", "mittwoch", "donnerstag",
         "freitag", "samstag", "sonntag", "januar", "februar",
         # Common German words
@@ -208,14 +208,15 @@ def extract_booking_intent(text: str, reply: str, customer_context: dict | None 
 
     # Buchungs-Keywords (eines davon reicht) - erweitert für LLM-Varianten
     # NOTE: "kommen" removed - too generic, causes false positives like "kann nicht kommen"
+    # CHANGED: "probetraining" → "beratungstermin" (Beratungstermin statt Probetraining)
     booking_keywords = [
-        "probetraining", "probentraining", "probe training",  # inkl. LLM-Variante
+        "beratungstermin", "beratung", "beratungsgespräch",  # Hauptziel: Beratungstermin
         "termin", "buchen", "buchung", "gebucht",
         "anmelden", "anmeldung", "reservieren", "reservierung",
-        "training machen", "training buchen",
         "vorbeikommen", "vorbei kommen",  # "kommen" allein zu generisch
         "ausprobieren", "testen", "probieren",
         "einbuchen", "eintragen",
+        "kennenlernen", "infos holen", "informieren",  # Beratungs-spezifisch
     ]
     has_booking_keyword = any(kw in combined for kw in booking_keywords)
 

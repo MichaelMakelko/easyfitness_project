@@ -26,7 +26,7 @@ def create_default_profil() -> dict[str, Any]:
         "dringlichkeit": None,
         "wie_gefunden": None,
         "interesse_level": None,
-        "probetraining_datum": None,
+        "beratungstermin_datum": None,
         "follow_up_datum": None,
     }
 
@@ -80,7 +80,7 @@ CUSTOMER_READY_TO_BOOK = create_customer(
 
 CUSTOMER_REGISTERED = create_customer(
     name="Peter",
-    status="Probetraining gebucht",
+    status="Beratungstermin gebucht",
     profil_updates={
         "magicline_customer_id": 12345,
         "vorname": "Peter",

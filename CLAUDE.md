@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-German-language WhatsApp chatbot for EasyFitness EMS Braunschweig fitness studio. Uses a local Llama 3.1 8B LLM (4-bit quantized) to simulate "Max" - a fitness trainer persona who engages with leads and books trial training sessions via the MagicLine booking API.
+German-language WhatsApp chatbot for EasyFitness EMS Braunschweig fitness studio. Uses a local Llama 3.1 8B LLM (4-bit quantized) to simulate "Max" - a fitness trainer persona who engages with leads and books **consultation appointments (Beratungstermine)** via the MagicLine booking API (trial-offer endpoints).
 
 ## Commands
 
@@ -65,7 +65,7 @@ WhatsApp Message → Flask Webhook (routes.py)
 
 All customer data stored in `data/customers.json` (no database). Each customer record includes:
 - `name`: Display name (updated from `vorname`)
-- `status`: Lead status (neuer Interessent → Name bekannt → Probetraining gebucht)
+- `status`: Lead status (neuer Interessent → Name bekannt → Beratungstermin gebucht)
 - `profil`: Profile fields including:
   - `magicline_customer_id`: MagicLine ID (null for new leads, set manually after registration)
   - `vorname`, `nachname`: Required for Trial Offer booking
@@ -86,7 +86,7 @@ Copy `.env.example` to `.env` and configure:
 | `MODEL_PATH` | Path to local Llama model directory |
 | `MAGICLINE_BASE_URL` | MagicLine API base URL |
 | `MAGICLINE_API_KEY` | MagicLine API key |
-| `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER` | Bookable ID for trial offer appointments (Probetraining = 30 min) |
+| `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER` | Bookable ID for trial offer appointments (Beratungstermin = 30 min) |
 | `MAGICLINE_STUDIO_ID` | Studio ID |
 | `MAGICLINE_TEST_CUSTOMER_ID` | Test customer ID for development |
 | `MAGICLINE_TRIAL_OFFER_CONFIG_ID` | Config ID for trial offer bookings |
@@ -99,7 +99,7 @@ Copy `.env.example` to `.env` and configure:
 
 ### Intent Detection (`text_parser.py`)
 Booking is triggered when:
-- Message contains booking keyword (`probetraining`, `termin`, `buchen`, etc.)
+- Message contains booking keyword (`beratungstermin`, `beratung`, `termin`, `buchen`, etc.)
 - AND contains date (`25.12.`, `25.12.2025`, weekday names) OR time (`10:00`, `10 Uhr`)
 
 ### Date/Time Parsing
@@ -125,7 +125,7 @@ Booking is triggered when:
 - Bot asks for missing data before attempting booking
 
 **General:**
-- Probetraining duration: **30 minutes**
+- Beratungstermin duration: **30 minutes**
 - Validates slot availability before booking
 
 ### Fallback Data Request System
@@ -138,9 +138,10 @@ The `_ensure_asks_for_missing_data()` function in `routes.py` ensures the bot as
 ### Booking Keywords
 
 Booking intent is detected when message contains a keyword + date/time:
-- `probetraining`, `probentraining`, `termin`, `buchen`, `buchung`, `anmelden`, `reservieren`
+- `beratungstermin`, `beratung`, `beratungsgespräch`, `termin`, `buchen`, `buchung`
+- `anmelden`, `anmeldung`, `reservieren`, `reservierung`
 - `vorbeikommen`, `vorbei kommen`, `ausprobieren`, `testen`, `probieren`
-- `einbuchen`, `eintragen`, `training machen`, `training buchen`
+- `einbuchen`, `eintragen`, `kennenlernen`, `infos holen`, `informieren`
 
 **Note:** `kommen` was removed (too generic, caused false positives like "kann nicht kommen")
 
@@ -912,3 +913,120 @@ Bot: "Hey! Wie kann ich dir helfen?"
 1. Regular endpoints don't enforce trial-offer business rules
 2. Double-booking was possible with `/appointments/booking/book`
 3. Trial-offer endpoints properly check slot availability and conflicts
+
+---
+
+## Session Notes (2026-01-10 #2) - Probetraining → Beratungstermin Rename
+
+### Overview
+Comprehensive rename from "Probetraining" (trial training) to "Beratungstermin" (consultation appointment) throughout the entire codebase. The underlying MagicLine API still uses trial-offer endpoints, but all user-facing text now refers to consultation appointments.
+
+### Scope of Change
+
+| Area | Changes Made |
+|------|--------------|
+| **Booking Keywords** | `probetraining` → `beratungstermin`, `beratung`, `beratungsgespräch` |
+| **Customer Status** | `"Probetraining gebucht"` → `"Beratungstermin gebucht"` |
+| **Profile Field** | `probetraining_datum` → `beratungstermin_datum` |
+| **Bot Messages** | All user-facing messages updated to say "Beratungstermin" |
+| **LLM Prompt** | Complete rewrite of `fitnesstrainer_prompt.txt` |
+| **Test Files** | All 405 tests updated and passing |
+
+### Files Modified
+
+#### Core Source Files
+
+| File | Changes |
+|------|---------|
+| `src/utils/text_parser.py` | Updated booking_keywords list, added `beratungstermin`, `beratung`, `beratungsgespräch`, `kennenlernen`, `infos holen`, `informieren` |
+| `src/constants.py` | `TRIAL_BOOKED = "Beratungstermin gebucht"` |
+| `src/api/routes.py` | Fallback message: "Wann möchtest du zum Beratungstermin vorbeikommen?" |
+| `src/services/customer_service.py` | `beratungstermin_datum` field in default profile |
+| `src/services/booking_service.py` | Comments updated to "30 min for Beratungstermin" |
+| `src/prompts/fitnesstrainer_prompt.txt` | Complete rewrite - new focus on consultation appointments |
+| `src/prompts/extract_profil_prompt.txt` | `beratungstermin_datum` field |
+
+#### Test Files Updated
+
+| File | Changes |
+|------|---------|
+| `tests/conftest.py` | All `probetraining` references → `beratungstermin` |
+| `tests/fixtures/customer_data.py` | Status and field updates |
+| `tests/fixtures/whatsapp_payloads.py` | Booking message samples |
+| `tests/unit/test_text_parser.py` | Booking intent test cases |
+| `tests/unit/test_customer_service.py` | Expected fields list |
+| `tests/unit/test_extraction_service.py` | Extraction test messages |
+| `tests/unit/test_session_changes.py` | Fallback message assertions |
+| `tests/integration/test_booking_flow.py` | End-to-end booking tests |
+| `tests/load/locustfile.py` | Load test messages |
+
+### New Booking Keywords
+
+```python
+booking_keywords = [
+    "beratungstermin", "beratung", "beratungsgespräch",  # NEW: Hauptziel
+    "termin", "buchen", "buchung", "gebucht",
+    "anmelden", "anmeldung", "reservieren", "reservierung",
+    "vorbeikommen", "vorbei kommen",
+    "ausprobieren", "testen", "probieren",
+    "einbuchen", "eintragen",
+    "kennenlernen", "infos holen", "informieren",  # NEW: Beratungs-spezifisch
+]
+```
+
+### New LLM Prompt Structure
+
+The `fitnesstrainer_prompt.txt` was completely rewritten with:
+
+1. **Conversation Flow**: Bot no longer jumps to booking immediately
+   - Phase 1: Greet and introduce
+   - Phase 2: Build interest (explain EMS, benefits)
+   - Phase 3: Offer consultation when interest is shown
+   - Phase 4: Collect booking data
+
+2. **Booking Status Section**: `[BUCHUNGSSTATUS]` with clear rules:
+   - New leads need: `vorname`, `nachname`, `email`, `datum`, `uhrzeit`
+   - Existing customers need only: `datum`, `uhrzeit`
+
+3. **Strict 1-Sentence Responses**: "MAXIMAL EIN SATZ pro Nachricht (STRIKT!)"
+
+4. **EMS Information**: Includes studio info, pricing (4 Wochen für 99€), contact details
+
+### Important: API Endpoints Unchanged
+
+The MagicLine API still uses **trial-offer endpoints** (`/trial-offers/...`). Only the user-facing terminology changed:
+
+| API Endpoint | User-Facing Term |
+|--------------|-----------------|
+| `/trial-offers/lead/create` | "Beratungstermin buchen" |
+| `/trial-offers/appointments/booking/book` | "Beratungstermin buchen" |
+| Config: `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER` | Beratungstermin bookable ID |
+
+### Test Status
+**405 tests passing** (unchanged count, all tests updated)
+
+### Why This Change?
+
+1. **Business Requirement**: Studio wants to offer "Beratungstermine" (consultation appointments) rather than "Probetraining" (trial training)
+2. **Better Customer Approach**: Consultation first, then trial training
+3. **Same Technical Flow**: MagicLine trial-offer API is perfect for consultation bookings (30 min, lead creation, slot management)
+
+### Example Booking Flow (Updated)
+
+```
+1. User: "Hallo"
+   → Bot: "Hey, ich bin Max von easyfitness - wie kann ich dir helfen? 👋"
+
+2. User: "Was bietet ihr an?"
+   → Bot: "EMS ist Muskeltraining mit elektrischen Impulsen in nur 20 Min - hast du das schon mal probiert? 💪"
+
+3. User: "Klingt interessant! Wie kann ich das testen?"
+   → Bot: "Super, wir können gerne einen Beratungstermin vereinbaren - wie heißt du? 😊"
+
+4. User: "Ich bin Max Mustermann, max@test.de"
+   → Bot: "Cool Max! Wann möchtest du zum Beratungstermin vorbeikommen? 📅"
+
+5. User: "Am 15.01. um 14 Uhr"
+   → [Slot pre-check → Lead creation → Booking]
+   → Bot: "Super, ich buche dich für den 15.01. um 14:00 Uhr ein! 💪"
+```

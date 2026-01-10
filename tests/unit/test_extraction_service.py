@@ -211,14 +211,14 @@ class TestDateHallucinationPrevention:
         CRITICAL: If user message has NO date keywords, reject LLM-extracted date.
 
         Bug scenario:
-        - User: "Ich will ein Probetraining machen"
+        - User: "Ich will ein Beratungstermin machen"
         - LLM hallucinates: {"datum": "2026-01-15"}
         - Expected: datum should be None (no date in original message)
         """
         # LLM hallucinates a date from a message with no date keywords
         mock_llm.generate_extraction.return_value = '{"vorname": null, "nachname": null, "email": null, "datum": "2026-01-15", "uhrzeit": null}'
 
-        result = extraction_service.extract_customer_data("Ich will ein Probetraining machen")
+        result = extraction_service.extract_customer_data("Ich will ein Beratungstermin machen")
 
         # Date should be rejected as hallucination
         assert result["datum"] is None
@@ -245,7 +245,7 @@ class TestDateHallucinationPrevention:
         """Accept LLM date when explicit date pattern (DD.MM.) in message."""
         mock_llm.generate_extraction.return_value = f'{{"vorname": null, "nachname": null, "email": null, "datum": "{future_date}", "uhrzeit": null}}'
 
-        result = extraction_service.extract_customer_data("Probetraining am 15.01. bitte")
+        result = extraction_service.extract_customer_data("Beratungstermin am 15.01. bitte")
 
         assert result["datum"] == future_date
 

@@ -67,16 +67,16 @@ class TestExtractBookingIntent:
         "text,reply,expected",
         [
             # Positive cases - keyword + date
-            ("Probetraining am 20.01.2025", "", True),
+            ("Beratungstermin am 20.01.2025", "", True),
             ("Termin am 20.01.", "", True),
             ("Buchen fuer naechsten Montag", "", True),
             # Positive cases - keyword + time
-            ("Probetraining um 14:00", "", True),
+            ("Beratungstermin um 14:00", "", True),
             ("Termin 10 Uhr", "", True),
             # Keyword in reply
-            ("am 20.01.", "Probetraining", True),
+            ("am 20.01.", "Beratungstermin", True),
             # Negative cases - keyword only, no date/time
-            ("Probetraining", "", False),
+            ("Beratungstermin", "", False),
             ("Termin buchen", "", False),
             # Negative cases - date/time only, no keyword
             ("Am 20.01.2025 um 14:00", "", False),
@@ -101,7 +101,7 @@ class TestExtractBookingIntent:
     def test_booking_intent_relative_dates(self):
         """Test relative date expressions in German."""
         # morgen requires umlaut handling
-        assert extract_booking_intent("Probetraining morgen", "") is True
+        assert extract_booking_intent("Beratungstermin morgen", "") is True
         assert extract_booking_intent("Termin diese woche", "") is True
 
     def test_booking_intent_ausprobieren_keyword(self):
@@ -295,7 +295,7 @@ class TestExtractFullName:
             ("Maria Schmidt und meine E-Mail ist maria@web.de", "Maria", "Schmidt"),
             # Two capitalized words at start
             ("Max Mustermann", "Max", "Mustermann"),
-            ("Anna Schmidt möchte ein Probetraining", "Anna", "Schmidt"),
+            ("Anna Schmidt möchte einen Beratungstermin", "Anna", "Schmidt"),
         ],
     )
     def test_extract_full_name_success(self, text: str, expected_vorname: str, expected_nachname: str):
@@ -454,7 +454,7 @@ class TestContainsDateKeywords:
     @pytest.mark.parametrize(
         "text",
         [
-            "Probetraining am 15.01.",
+            "Beratungstermin am 15.01.",
             "Termin am 25.12.2026",
             "am 9.1 um 10 Uhr",
             "den 3.2. bitte",
@@ -504,7 +504,7 @@ class TestContainsDateKeywords:
         "text",
         [
             "Hallo, guten Tag!",
-            "Ich will ein Probetraining machen",
+            "Ich will einen Beratungstermin machen",
             "Mein Name ist Max Mustermann",
             "Meine Email ist test@example.de",
             "Was kostet das Training?",

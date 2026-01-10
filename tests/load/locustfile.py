@@ -51,7 +51,7 @@ class WebhookUser(HttpUser):
         questions = [
             "Was kostet das Training bei euch?",
             "Wie funktioniert EMS Training?",
-            "Habt ihr Probetraining?",
+            "Habt ihr Beratungstermine?",
             "Wo seid ihr?",
             "Wann habt ihr geoeffnet?",
             "Wie lange dauert eine Einheit?",
@@ -162,7 +162,7 @@ class MixedTrafficUser(HttpUser):
             "Was kostet das Training?",
             "Ich bin Max Mustermann",
             "Meine Email ist max@test.de",
-            "Probetraining am 20.01. um 14 Uhr",
+            "Beratungstermin am 20.01. um 14 Uhr",
         ]
 
         if self.conversation_stage < len(stages):
