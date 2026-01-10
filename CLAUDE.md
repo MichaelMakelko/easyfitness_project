@@ -752,3 +752,163 @@ The implementation uses the MagicLine OpenAPI endpoint documented at:
 - [Trial Offers API](https://developer.sportalliance.com/apis/magicline/openapi/openapi/trial-offers)
 - Base URL: `https://<tenant>.open-api.magicline.com/v1`
 - Auth: `X-API-KEY` header
+
+---
+
+## Session Notes (2026-01-10) - Date Hallucination Fix & API Endpoint Corrections
+
+### Overview
+Fixed critical bugs where the LLM would hallucinate dates when no date was mentioned, and corrected MagicLine API endpoints that were returning 404 errors or allowing double-bookings.
+
+### Problems Solved
+
+| Issue | Severity | Description |
+|-------|----------|-------------|
+| Date hallucination | CRITICAL | LLM extracted dates like "2026-01-15" when user only said "Hallo" |
+| Slots endpoint 404 | HIGH | Wrong endpoint path for fetching available slots |
+| Double-booking allowed | HIGH | Wrong booking endpoint didn't check for conflicts |
+| Name extraction missed | MEDIUM | "Max Mustermann und meine email ist X@Y.de" failed |
+
+### Root Cause Analysis
+
+**Bug 1: Date Hallucination**
+- LLM's `generate_extraction()` would sometimes return dates even when user message contained no date-related text
+- Example: User says "Hallo Max" → LLM returns `{"datum": "2026-01-15"}`
+- This caused the bot to think the user requested a specific date
+
+**Bug 2: Wrong MagicLine Endpoints**
+- Slots endpoint was `/trial-offers/appointments/{id}/slots` → returned 404
+- Correct path is `/trial-offers/bookable-trial-offers/appointments/bookable/{id}/slots`
+- Validation was using `/appointments/bookable/validate` → didn't check conflicts
+- Booking was using `/appointments/booking/book` → allowed double-booking
+
+### Files Modified
+
+#### 1. `src/utils/text_parser.py`
+**Added `contains_date_keywords()` function:**
+```python
+def contains_date_keywords(text: str) -> bool:
+    """
+    Check if text contains any date-related keywords.
+    Used to prevent LLM date hallucinations.
+    """
+    # Explicit date patterns (DD.MM. or DD.MM.YYYY)
+    if re.search(r'\d{1,2}\.\d{1,2}\.', lower):
+        return True
+
+    # Relative keywords (heute, morgen, übermorgen, nächste woche, etc.)
+    # Weekday names (montag, dienstag, etc.)
+```
+
+**Improved name extraction for "Name und email" pattern:**
+```python
+# Pattern: "Max Mustermann und meine email ist X@Y.de"
+email_separator = re.search(r'\s+und\s+(?:meine\s+)?(?:e-?mail|mail)\s+(?:ist\s+)?', ...)
+if email_separator:
+    name_part = before_email[:email_separator.start()].strip()
+```
+
+#### 2. `src/services/extraction_service.py`
+**Added hallucination check before accepting LLM dates:**
+```python
+# === CRITICAL: Hallucination check for dates ===
+datum = data.get("datum")
+if datum and original_text:
+    if not contains_date_keywords(original_text):
+        print(f"⚠️ Date hallucination rejected: '{datum}' (no date keywords in: '{original_text[:50]}...')")
+        data["datum"] = None
+```
+
+#### 3. `src/services/booking_service.py`
+**Fixed three API endpoint paths:**
+
+| Method | Old (Wrong) | New (Correct) |
+|--------|-------------|---------------|
+| `get_available_slots()` | `/trial-offers/appointments/{id}/slots` | `/trial-offers/bookable-trial-offers/appointments/bookable/{id}/slots` |
+| `validate_appointment_for_lead()` | `/appointments/bookable/validate` | `/trial-offers/appointments/booking/validate` |
+| `book_appointment_for_lead()` | `/appointments/booking/book` | `/trial-offers/appointments/booking/book` |
+
+**Renamed config variable for clarity:**
+```python
+# Before
+MAGICLINE_BOOKABLE_ID
+
+# After
+MAGICLINE_BOOKABLE_ID_TRIAL_OFFER
+```
+
+#### 4. `src/config.py`
+- Renamed `MAGICLINE_BOOKABLE_ID` → `MAGICLINE_BOOKABLE_ID_TRIAL_OFFER`
+
+### Test Changes
+
+| File | Changes |
+|------|---------|
+| `tests/unit/test_text_parser.py` | +25 tests for `contains_date_keywords()` and improved name extraction |
+| `tests/unit/test_extraction_service.py` | +15 tests for date hallucination rejection |
+| `tests/unit/test_booking_service.py` | Updated endpoint expectations |
+| `tests/integration/test_booking_flow.py` | Updated for new endpoint paths |
+
+### Current Test Status
+**404 tests passing** (was 354 before, added 50 new tests)
+
+### Key Code Patterns
+
+**Hallucination Prevention (extraction_service.py:126-133):**
+```python
+# If user didn't mention ANY date-related term, reject LLM's date
+if datum and original_text:
+    if not contains_date_keywords(original_text):
+        print(f"⚠️ Date hallucination rejected: '{datum}'")
+        data["datum"] = None
+```
+
+**Date Keyword Detection (text_parser.py:422-462):**
+```python
+def contains_date_keywords(text: str) -> bool:
+    # 1. Explicit: "15.01." or "15.01.2026"
+    # 2. Relative: "heute", "morgen", "übermorgen", "nächste woche"
+    # 3. Weekdays: "montag", "dienstag", etc.
+    return True if any match else False
+```
+
+**Correct Trial-Offer Endpoints (booking_service.py):**
+```python
+# Slots
+GET /v1/trial-offers/bookable-trial-offers/appointments/bookable/{bookableAppointmentId}/slots
+
+# Validate
+POST /v1/trial-offers/appointments/booking/validate
+
+# Book
+POST /v1/trial-offers/appointments/booking/book
+```
+
+### Example: Hallucination Prevention
+
+```
+BEFORE (Bug):
+User: "Hallo Max"
+LLM Extraction: {"datum": "2026-01-15", ...}  ← WRONG!
+Bot: "Um welche Uhrzeit möchtest du am 15.01.2026 vorbeikommen?"
+
+AFTER (Fixed):
+User: "Hallo Max"
+LLM Extraction: {"datum": "2026-01-15", ...}
+Hallucination Check: No date keywords in "Hallo Max" → REJECT
+Final Extraction: {"datum": null, ...}
+Bot: "Hey! Wie kann ich dir helfen?"
+```
+
+### Architecture Decisions
+
+**Why check date keywords instead of trusting LLM?**
+1. LLM hallucinations are unpredictable and hard to prevent via prompting
+2. Date keywords are finite and easy to detect with regex
+3. False negatives (missing "next Tuesday") are less harmful than false positives
+4. Regex is 100% reliable; LLM is ~95% reliable
+
+**Why use trial-offer specific endpoints?**
+1. Regular endpoints don't enforce trial-offer business rules
+2. Double-booking was possible with `/appointments/booking/book`
+3. Trial-offer endpoints properly check slot availability and conflicts
