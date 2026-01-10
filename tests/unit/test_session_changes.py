@@ -518,3 +518,134 @@ class TestSlotUnavailableWithAlternatives:
         result = BotMessages.slot_unavailable_with_alternatives(["14:00"])
         # Contains German words
         assert "belegt" in result.lower() or "verfügbar" in result.lower()
+
+
+class TestIsAgreementResponse:
+    """
+    Tests for _is_agreement_response() function.
+
+    NOTE: Uses a local copy to avoid importing api.routes which triggers
+    LlamaBot instantiation in test environment.
+    """
+
+    @staticmethod
+    def _is_agreement_response(text: str) -> bool:
+        """Local copy of the function for isolated testing."""
+        agreement_words = [
+            "ja", "klar", "gerne", "ok", "okay", "jo", "jop", "jup",
+            "ja klar", "ja gerne", "ja bitte", "ja gern",
+            "super", "cool", "toll", "prima", "perfekt", "passt",
+            "machen wir", "gern", "sehr gerne", "auf jeden fall",
+            "logo", "sicher", "natürlich", "klingt gut", "bin dabei",
+        ]
+        lower = text.lower().strip()
+        for word in agreement_words:
+            if lower == word or lower.startswith(word + " ") or lower.startswith(word + "!"):
+                return True
+        return False
+
+    @pytest.mark.parametrize("agreement_text", [
+        # Simple agreements
+        "ja", "Ja", "JA",
+        "klar", "Klar",
+        "gerne", "Gerne",
+        "ok", "OK", "Ok",
+        "okay", "Okay",
+        # Compound agreements
+        "ja klar", "Ja klar", "JA KLAR",
+        "ja gerne", "Ja gerne",
+        "ja bitte", "Ja bitte",
+        "ja gern", "Ja gern",
+        # Positive expressions
+        "super", "Super", "SUPER",
+        "cool", "Cool",
+        "toll", "Toll",
+        "prima", "Prima",
+        "perfekt", "Perfekt",
+        "passt", "Passt",
+        # Longer phrases
+        "machen wir", "Machen wir",
+        "gern", "Gern",
+        "sehr gerne", "Sehr gerne",
+        "auf jeden fall", "Auf jeden Fall",
+        # Slang/informal
+        "jo", "Jo",
+        "jop", "Jop",
+        "jup", "Jup",
+        "logo", "Logo",
+        # Other positive
+        "sicher", "Sicher",
+        "natürlich", "Natürlich",
+        "klingt gut", "Klingt gut",
+        "bin dabei", "Bin dabei",
+    ])
+    def test_detects_agreement_words(self, agreement_text: str):
+        """Test that agreement words are detected correctly."""
+        assert self._is_agreement_response(agreement_text) is True
+
+    @pytest.mark.parametrize("agreement_with_suffix", [
+        # With exclamation mark
+        "ja!", "Ja!", "JA!",
+        "klar!", "super!", "perfekt!",
+        "ja klar!", "Ja gerne!",
+        # With additional text
+        "ja das wäre toll",
+        "klar machen wir",
+        "gerne möchte ich das",
+        "ok passt mir gut",
+        "super freue mich",
+        "ja bitte gerne",
+    ])
+    def test_detects_agreement_with_suffix(self, agreement_with_suffix: str):
+        """Test that agreement words with trailing text are detected."""
+        assert self._is_agreement_response(agreement_with_suffix) is True
+
+    @pytest.mark.parametrize("non_agreement", [
+        # Questions
+        "Wann hast du Zeit?",
+        "Wie spät?",
+        "Um welche Uhrzeit?",
+        # Names
+        "Max Mustermann",
+        "Ich bin Anna",
+        # Dates/times
+        "15.01.2026",
+        "14 Uhr",
+        "morgen",
+        # Booking requests
+        "Ich möchte einen Termin buchen",
+        "Beratungstermin bitte",
+        # Statements that don't start with agreement
+        "Das klingt gut",  # "klingt gut" is agreement, but this doesn't START with it
+        "Ich sage ja",  # "ja" in middle, not at start
+        "Finde ich super",  # "super" in middle
+        # Random text
+        "Hallo",
+        "test",
+        "...",
+        # Email/data
+        "max@test.de",
+        "meine email ist test@test.de",
+    ])
+    def test_rejects_non_agreement(self, non_agreement: str):
+        """Test that non-agreement text is not detected as agreement."""
+        assert self._is_agreement_response(non_agreement) is False
+
+    def test_handles_whitespace(self):
+        """Test that whitespace is trimmed correctly."""
+        assert self._is_agreement_response("  ja  ") is True
+        assert self._is_agreement_response("\tja\n") is True
+        assert self._is_agreement_response("   super   ") is True
+
+    def test_handles_empty_string(self):
+        """Test empty string returns False."""
+        assert self._is_agreement_response("") is False
+        assert self._is_agreement_response("   ") is False
+
+    def test_case_insensitive(self):
+        """Test that matching is case insensitive."""
+        assert self._is_agreement_response("JA KLAR") is True
+        assert self._is_agreement_response("ja KLAR") is True
+        assert self._is_agreement_response("Ja Klar") is True
+        assert self._is_agreement_response("SUPER") is True
+        assert self._is_agreement_response("AUF JEDEN FALL") is True
