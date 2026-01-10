@@ -8,7 +8,7 @@ import requests
 from config import (
 	MAGICLINE_API_KEY,
 	MAGICLINE_BASE_URL,
-	MAGICLINE_BOOKABLE_ID,
+	MAGICLINE_BOOKABLE_ID_TRIAL_OFFER,
 	MAGICLINE_TRIAL_OFFER_CONFIG_ID,
 )
 from constants import BotMessages
@@ -20,7 +20,7 @@ class BookingService:
 	def __init__(self):
 		self.base_url = MAGICLINE_BASE_URL
 		self.api_key = MAGICLINE_API_KEY
-		self.bookable_id = MAGICLINE_BOOKABLE_ID
+		self.bookable_id = MAGICLINE_BOOKABLE_ID_TRIAL_OFFER
 		self.trial_offer_config_id = MAGICLINE_TRIAL_OFFER_CONFIG_ID
 		self.headers = {
 			"X-API-KEY": self.api_key,
@@ -139,6 +139,300 @@ class BookingService:
 			return True, BotMessages.BOOKING_SUCCESS, booking_id
 		else:
 			return False, BotMessages.BOOKING_GENERIC_ERROR, None
+
+	# ==================== SLOT AVAILABILITY METHODS ====================
+
+	def get_available_slots(
+		self, date: str, duration_minutes: int = 30
+	) -> dict[str, Any]:
+		"""
+		Get available slots for trial offers on a specific date.
+
+		Uses the trial-offers bookable appointments slots endpoint to fetch available slots.
+
+		IMPORTANT: The correct endpoint path is:
+		/v1/trial-offers/bookable-trial-offers/appointments/bookable/{bookableAppointmentId}/slots
+		NOT: /v1/trial-offers/appointments/{id}/slots (this returns 404!)
+
+		Args:
+			date: Date in YYYY-MM-DD format
+			duration_minutes: Appointment duration (default 30 min for Probetraining)
+
+		Returns:
+			Response dictionary with:
+			- success: bool
+			- slots: list of available slot dictionaries (each with startDateTime, endDateTime)
+			- error: error message if failed
+		"""
+		# FIXED: Correct endpoint path for trial-offers slots
+		url = f"{self.base_url}/trial-offers/bookable-trial-offers/appointments/bookable/{self.bookable_id}/slots"
+		params = {
+			"date": date,
+			"duration": duration_minutes,
+		}
+
+		print(f"🔍 GET AVAILABLE SLOTS REQUEST:")
+		print(f"   URL: {url}")
+		print(f"   Params: {params}")
+
+		try:
+			response = requests.get(
+				url,
+				params=params,
+				headers=self.headers,
+				timeout=10,
+			)
+			print(f"   Status: {response.status_code}")
+			print(f"   Response: {response.text[:500] if response.text else 'empty'}")
+
+			if response.status_code == 200:
+				data = response.json()
+				# Handle different response formats from API
+				# API might return {"slots": [...]} or directly [...]
+				if isinstance(data, list):
+					slots = data
+				elif isinstance(data, dict):
+					slots = data.get("slots", data.get("items", []))
+				else:
+					slots = []
+
+				return {"success": True, "slots": slots}
+			else:
+				return {
+					"success": False,
+					"slots": [],
+					"error": response.text,
+					"status_code": response.status_code,
+				}
+		except requests.RequestException as e:
+			print(f"   ❌ Error: {e}")
+			return {
+				"success": False,
+				"slots": [],
+				"error": str(e),
+				"is_network_error": True,
+			}
+
+	def check_slot_availability(
+		self, start_datetime: str, duration_minutes: int = 30
+	) -> dict[str, Any]:
+		"""
+		Check if a specific slot is available for booking.
+
+		This is a pre-check BEFORE creating a lead to avoid creating leads
+		for slots that are already booked.
+
+		Args:
+			start_datetime: Desired start time in ISO format (YYYY-MM-DDTHH:MM:SS+TZ)
+			duration_minutes: Appointment duration
+
+		Returns:
+			Dictionary with:
+			- available: bool - True if slot is available
+			- alternatives: list[str] - Alternative time slots if not available
+			- error: str - Error message if API call failed
+			- api_error: bool - True if there was an API error (should fallback)
+		"""
+		# Extract date from ISO datetime
+		date = self._extract_date_from_datetime(start_datetime)
+		if not date:
+			return {
+				"available": False,
+				"alternatives": [],
+				"error": "Invalid datetime format",
+				"api_error": True,
+			}
+
+		# Fetch available slots for the day
+		slots_response = self.get_available_slots(date, duration_minutes)
+
+		if not slots_response.get("success"):
+			# API error - return api_error=True to signal fallback
+			return {
+				"available": False,
+				"alternatives": [],
+				"error": slots_response.get("error", "Unknown error"),
+				"api_error": True,
+			}
+
+		slots = slots_response.get("slots", [])
+
+		if not slots:
+			# No slots available for the entire day
+			return {
+				"available": False,
+				"alternatives": [],
+				"error": "No slots available on this day",
+				"api_error": False,
+			}
+
+		# Check if requested slot is in the list
+		is_available = self._is_slot_in_list(start_datetime, slots)
+
+		if is_available:
+			return {
+				"available": True,
+				"alternatives": [],
+				"error": None,
+				"api_error": False,
+			}
+
+		# Slot not available - find alternatives
+		alternatives = self._get_alternative_slots(start_datetime, slots, max_alternatives=3)
+
+		return {
+			"available": False,
+			"alternatives": alternatives,
+			"error": None,
+			"api_error": False,
+		}
+
+	def _extract_date_from_datetime(self, iso_datetime: str) -> Optional[str]:
+		"""
+		Extract date (YYYY-MM-DD) from ISO datetime string.
+
+		Args:
+			iso_datetime: ISO format datetime (e.g., 2026-01-15T14:00:00+01:00)
+
+		Returns:
+			Date string in YYYY-MM-DD format, or None if parsing fails
+		"""
+		if not iso_datetime:
+			return None
+
+		try:
+			# ISO datetime starts with YYYY-MM-DD
+			return iso_datetime[:10]
+		except (TypeError, IndexError):
+			return None
+
+	def _is_slot_in_list(self, target_datetime: str, slots: list[dict]) -> bool:
+		"""
+		Check if target datetime matches any slot in the list.
+
+		Args:
+			target_datetime: ISO datetime to find
+			slots: List of slot dictionaries from API
+
+		Returns:
+			True if slot is found in list
+		"""
+		if not target_datetime or not slots:
+			return False
+
+		# Extract time portion for comparison (HH:MM)
+		target_time = self._extract_time_from_datetime(target_datetime)
+		if not target_time:
+			return False
+
+		for slot in slots:
+			# API might use different field names
+			slot_start = slot.get("startDateTime") or slot.get("start") or slot.get("startTime")
+			if not slot_start:
+				continue
+
+			slot_time = self._extract_time_from_datetime(slot_start)
+			if slot_time == target_time:
+				return True
+
+		return False
+
+	def _extract_time_from_datetime(self, iso_datetime: str) -> Optional[str]:
+		"""
+		Extract time (HH:MM) from ISO datetime string.
+
+		Args:
+			iso_datetime: ISO format datetime (e.g., 2026-01-15T14:00:00+01:00)
+
+		Returns:
+			Time string in HH:MM format, or None if parsing fails
+		"""
+		if not iso_datetime:
+			return None
+
+		try:
+			# ISO datetime has T separator, time starts after T
+			if "T" in iso_datetime:
+				time_part = iso_datetime.split("T")[1]
+				return time_part[:5]  # HH:MM
+			return None
+		except (TypeError, IndexError):
+			return None
+
+	def _get_alternative_slots(
+		self, target_datetime: str, slots: list[dict], max_alternatives: int = 3
+	) -> list[str]:
+		"""
+		Find alternative slots closest to the target time.
+
+		Args:
+			target_datetime: Original requested datetime
+			slots: Available slots from API
+			max_alternatives: Maximum number of alternatives to return
+
+		Returns:
+			List of alternative times in HH:MM format, sorted by closeness to target
+		"""
+		if not slots:
+			return []
+
+		target_time = self._extract_time_from_datetime(target_datetime)
+		if not target_time:
+			# Can't compare, just return first available slots
+			alternatives = []
+			for slot in slots[:max_alternatives]:
+				slot_start = slot.get("startDateTime") or slot.get("start") or slot.get("startTime")
+				if slot_start:
+					time_str = self._extract_time_from_datetime(slot_start)
+					if time_str:
+						alternatives.append(time_str)
+			return alternatives
+
+		# Parse target time to minutes for comparison
+		target_minutes = self._time_to_minutes(target_time)
+		if target_minutes is None:
+			return []
+
+		# Calculate distance from target for each slot
+		slot_distances = []
+		for slot in slots:
+			slot_start = slot.get("startDateTime") or slot.get("start") or slot.get("startTime")
+			if not slot_start:
+				continue
+
+			slot_time = self._extract_time_from_datetime(slot_start)
+			if not slot_time:
+				continue
+
+			slot_minutes = self._time_to_minutes(slot_time)
+			if slot_minutes is None:
+				continue
+
+			distance = abs(slot_minutes - target_minutes)
+			slot_distances.append((slot_time, distance))
+
+		# Sort by distance and return top N
+		slot_distances.sort(key=lambda x: x[1])
+		return [time for time, _ in slot_distances[:max_alternatives]]
+
+	def _time_to_minutes(self, time_str: str) -> Optional[int]:
+		"""
+		Convert HH:MM time string to minutes since midnight.
+
+		Args:
+			time_str: Time in HH:MM format
+
+		Returns:
+			Minutes since midnight, or None if parsing fails
+		"""
+		if not time_str or ":" not in time_str:
+			return None
+
+		try:
+			hours, minutes = time_str.split(":")[:2]
+			return int(hours) * 60 + int(minutes)
+		except (ValueError, TypeError):
+			return None
 
 	# ==================== TRIAL OFFER METHODS (für nicht-registrierte Leads) ====================
 
@@ -261,9 +555,11 @@ class BookingService:
 		duration_minutes: int = 30,
 	) -> dict[str, Any]:
 		"""
-		Validate appointment slot for a lead customer.
+		Validate appointment slot for a lead customer (trial offer).
 
-		Uses the regular appointment validation endpoint with leadCustomerId.
+		IMPORTANT: Uses the trial-offer specific validation endpoint:
+		/v1/trial-offers/appointments/booking/validate
+		NOT: /v1/appointments/bookable/validate (this doesn't check for conflicts!)
 
 		Args:
 			lead_customer_id: Lead customer ID from create_lead
@@ -282,7 +578,8 @@ class BookingService:
 			"endDateTime": end_datetime,
 		}
 
-		url = f"{self.base_url}/appointments/bookable/validate"
+		# FIXED: Use trial-offer specific validation endpoint
+		url = f"{self.base_url}/trial-offers/appointments/booking/validate"
 		print(f"🔍 VALIDATE APPOINTMENT FOR LEAD REQUEST:")
 		print(f"   URL: {url}")
 		print(f"   Payload: {payload}")
@@ -312,9 +609,11 @@ class BookingService:
 		duration_minutes: int = 30,
 	) -> dict[str, Any]:
 		"""
-		Book an appointment for a lead customer.
+		Book an appointment for a lead customer (trial offer).
 
-		Uses the regular appointment booking endpoint with leadCustomerId.
+		IMPORTANT: Uses the trial-offer specific booking endpoint:
+		/v1/trial-offers/appointments/booking/book
+		NOT: /v1/appointments/booking/book (allows double-booking!)
 
 		Args:
 			lead_customer_id: Lead customer ID from create_lead
@@ -333,7 +632,8 @@ class BookingService:
 			"endDateTime": end_datetime,
 		}
 
-		url = f"{self.base_url}/appointments/booking/book"
+		# FIXED: Use trial-offer specific booking endpoint
+		url = f"{self.base_url}/trial-offers/appointments/booking/book"
 		print(f"📅 BOOK APPOINTMENT FOR LEAD REQUEST:")
 		print(f"   URL: {url}")
 		print(f"   Payload: {payload}")
@@ -368,10 +668,14 @@ class BookingService:
 		Complete trial offer booking flow for unregistered leads.
 
 		Steps:
+		0. PRE-CHECK: Check slot availability BEFORE creating lead (prevents lead garbage)
 		1. Validate lead data
 		2. Create lead in MagicLine → get leadCustomerId
 		3. Validate booking slot with leadCustomerId
 		4. Book the appointment with leadCustomerId
+
+		If pre-check fails with alternatives, returns early without creating lead.
+		If pre-check has API error, falls back to old flow (create lead first).
 
 		Args:
 			first_name: Lead's first name
@@ -387,6 +691,25 @@ class BookingService:
 		print(f"   Name: {first_name} {last_name}")
 		print(f"   Email: {email}")
 		print(f"   DateTime: {start_datetime}")
+
+		# Step 0: PRE-CHECK slot availability BEFORE creating lead
+		# This prevents creating leads for slots that are already booked
+		slot_check = self.check_slot_availability(start_datetime, duration_minutes)
+
+		if not slot_check.get("api_error"):
+			# API call succeeded - we can trust the result
+			if not slot_check.get("available"):
+				alternatives = slot_check.get("alternatives", [])
+				if alternatives:
+					print(f"   ❌ Slot nicht verfügbar - Alternativen: {alternatives}")
+					return False, BotMessages.slot_unavailable_with_alternatives(alternatives), None
+				else:
+					print(f"   ❌ Slot nicht verfügbar - keine Alternativen")
+					return False, BotMessages.BOOKING_SLOT_UNAVAILABLE, None
+			print(f"   ✅ Slot verfügbar (Pre-Check)")
+		else:
+			# API error during pre-check - continue with old flow as fallback
+			print(f"   ⚠️ Pre-Check fehlgeschlagen (API-Fehler) - fahre mit altem Flow fort")
 
 		# Step 1: Validate lead
 		lead_validation = self.validate_lead(first_name, last_name, email)

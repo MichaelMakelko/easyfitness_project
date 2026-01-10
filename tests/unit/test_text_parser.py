@@ -4,6 +4,7 @@ import pytest
 from freezegun import freeze_time
 
 from utils.text_parser import (
+    contains_date_keywords,
     extract_booking_intent,
     extract_date_only,
     extract_date_time,
@@ -278,10 +279,20 @@ class TestExtractFullName:
             ("Mein Name ist Thomas Mueller", "Thomas", "Mueller"),
             ("mein name ist Maria Weber", "Maria", "Weber"),
             ("Ich bin Peter Maier", "Peter", "Maier"),
-            # Name before email pattern
+            # Name before email pattern (direct: "Vorname Nachname email@...")
             ("Britney Spears, theoneandonlybritney@outlook.de", "Britney", "Spears"),
             ("Max Mustermann, max@test.de", "Max", "Mustermann"),
             ("Anna Schmidt anna.schmidt@gmail.com", "Anna", "Schmidt"),
+            ("Michael moor michaelmo@outlook.de", "Michael", "Moor"),
+            ("lisa mueller lisa.mueller@web.de", "Lisa", "Mueller"),
+            # Email before name pattern (direct: "email@... Vorname Nachname")
+            ("michaelmo@outlook.de Michael moor", "Michael", "Moor"),
+            ("test@web.de Hans Mueller", "Hans", "Mueller"),
+            ("anna@gmail.com, Anna Schmidt", "Anna", "Schmidt"),
+            # Name + "und meine email ist" pattern
+            ("Lotto flotte und meine email ist lotte@outlook.de", "Lotto", "Flotte"),
+            ("Hans Meier und email ist hans@test.de", "Hans", "Meier"),
+            ("Maria Schmidt und meine E-Mail ist maria@web.de", "Maria", "Schmidt"),
             # Two capitalized words at start
             ("Max Mustermann", "Max", "Mustermann"),
             ("Anna Schmidt möchte ein Probetraining", "Anna", "Schmidt"),
@@ -429,3 +440,100 @@ class TestExtractEmail:
     def test_extract_email_with_dots_and_hyphens(self):
         """Test email extraction with dots and hyphens in local part."""
         assert extract_email("max.mueller-test@mail.de") == "max.mueller-test@mail.de"
+
+
+class TestContainsDateKeywords:
+    """Tests for contains_date_keywords function.
+
+    This function is critical for preventing LLM date hallucinations.
+    It checks if a message contains any date-related keywords before
+    accepting LLM-extracted dates.
+    """
+
+    # === Explicit date patterns ===
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Probetraining am 15.01.",
+            "Termin am 25.12.2026",
+            "am 9.1 um 10 Uhr",
+            "den 3.2. bitte",
+            "15.01.2026 wäre super",
+        ],
+    )
+    def test_explicit_date_patterns_return_true(self, text: str):
+        """Test that explicit date patterns (DD.MM.) are detected."""
+        assert contains_date_keywords(text) is True
+
+    # === Relative date keywords ===
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Ich komme heute",
+            "morgen wäre gut",
+            "übermorgen passt mir",
+            "nächste woche",
+            "diese Woche noch",
+            "am Wochenende",
+            "nächsten Freitag",
+            "kommenden Montag",
+        ],
+    )
+    def test_relative_date_keywords_return_true(self, text: str):
+        """Test that relative date keywords are detected."""
+        assert contains_date_keywords(text) is True
+
+    # === Weekday names ===
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Geht Montag?",
+            "Dienstag wäre super",
+            "Am Mittwoch bin ich frei",
+            "Donnerstag passt",
+            "Freitag Nachmittag",
+            "Samstag oder Sonntag",
+        ],
+    )
+    def test_weekday_names_return_true(self, text: str):
+        """Test that German weekday names are detected."""
+        assert contains_date_keywords(text) is True
+
+    # === Messages WITHOUT date keywords ===
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Hallo, guten Tag!",
+            "Ich will ein Probetraining machen",
+            "Mein Name ist Max Mustermann",
+            "Meine Email ist test@example.de",
+            "Was kostet das Training?",
+            "Ich bin interessiert",
+            "Ja, gerne!",
+            "Um 15 Uhr",  # Time only, no date!
+            "17:00 wäre gut",  # Time only, no date!
+        ],
+    )
+    def test_no_date_keywords_return_false(self, text: str):
+        """Test that messages without date keywords return False."""
+        assert contains_date_keywords(text) is False
+
+    def test_case_insensitive(self):
+        """Test that keyword detection is case-insensitive."""
+        assert contains_date_keywords("MORGEN") is True
+        assert contains_date_keywords("Heute") is True
+        assert contains_date_keywords("MONTAG") is True
+
+    def test_empty_string(self):
+        """Test empty string returns False."""
+        assert contains_date_keywords("") is False
+
+    def test_time_only_not_date(self):
+        """Test that time-only messages don't count as date keywords.
+
+        This is important: "Um 15 Uhr" has time but NO DATE.
+        The LLM might hallucinate a date, so we must reject it.
+        """
+        assert contains_date_keywords("Um 15 Uhr bitte") is False
+        assert contains_date_keywords("17:00") is False
+        assert contains_date_keywords("Geht um 10?") is False

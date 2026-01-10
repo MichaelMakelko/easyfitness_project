@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from constants import validate_email, validate_name
+from utils.text_parser import contains_date_keywords
 
 
 class ExtractionService:
@@ -86,8 +87,8 @@ Regeln:
 
             extracted = self._parse_extraction_response(raw_response)
 
-            # Validate extracted data
-            extracted = self._validate_extracted_data(extracted)
+            # Validate extracted data (pass original text for hallucination check)
+            extracted = self._validate_extracted_data(extracted, original_text=text)
 
             print(f"🔍 EXTRACTION PARSED & VALIDATED: {extracted}")
 
@@ -97,12 +98,15 @@ Regeln:
             print(f"❌ Extraction error: {e}")
             return {"vorname": None, "nachname": None, "email": None, "datum": None, "uhrzeit": None}
 
-    def _validate_extracted_data(self, data: dict[str, Optional[str]]) -> dict[str, Optional[str]]:
+    def _validate_extracted_data(
+        self, data: dict[str, Optional[str]], original_text: str = ""
+    ) -> dict[str, Optional[str]]:
         """
         Validate extracted data and set invalid values to None.
 
         Args:
             data: Extracted data dictionary
+            original_text: Original user message (for hallucination detection)
 
         Returns:
             Validated data dictionary
@@ -122,8 +126,17 @@ Regeln:
             print(f"⚠️ Invalid nachname: {data['nachname']}")
             data["nachname"] = None
 
-        # Validate date format and reasonableness
+        # === CRITICAL: Hallucination check for dates ===
+        # If the original message doesn't contain ANY date-related keywords,
+        # reject the LLM-extracted date as a hallucination
         datum = data.get("datum")
+        if datum and original_text:
+            if not contains_date_keywords(original_text):
+                print(f"⚠️ Date hallucination rejected: '{datum}' (no date keywords in: '{original_text[:50]}...')")
+                data["datum"] = None
+                datum = None  # Skip further validation
+
+        # Validate date format and reasonableness
         if datum:
             try:
                 parsed_date = datetime.strptime(datum, "%Y-%m-%d")
